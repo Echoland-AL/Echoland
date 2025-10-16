@@ -395,7 +395,8 @@ const app = new Elysia()
         ? JSON.parse(account.attachments || "{}") 
         : (account.attachments ?? {});
       
-      return {
+      // Build response object
+      const response: any = {
         vMaj: 188,
         vMinSrv: 1,
         personId: account.personId,
@@ -408,15 +409,6 @@ const app = new Elysia()
         attachments: typeof account.attachments === "string"
           ? account.attachments
           : JSON.stringify(account.attachments ?? {}),
-        leftHand: attachmentsObj.leftHand !== undefined 
-          ? (typeof attachmentsObj.leftHand === "string" ? attachmentsObj.leftHand : JSON.stringify(attachmentsObj.leftHand))
-          : undefined,
-        rightHand: attachmentsObj.rightHand !== undefined
-          ? (typeof attachmentsObj.rightHand === "string" ? attachmentsObj.rightHand : JSON.stringify(attachmentsObj.rightHand))
-          : undefined,
-        handColor: account.handColor !== undefined
-          ? (typeof account.handColor === "string" ? account.handColor : JSON.stringify(account.handColor))
-          : undefined,
         isSoftBanned: false,
         showFlagWarning: false,
         flagTags: [],
@@ -433,7 +425,24 @@ const app = new Elysia()
         isInEditToolsTrial: false,
         wasEditToolsTrialEverActivated: false,
         customSearchWords: ""
+      };
+
+      // Add optional fields if they exist
+      if (attachmentsObj.leftHand !== undefined) {
+        response.leftHand = typeof attachmentsObj.leftHand === "string" 
+          ? attachmentsObj.leftHand 
+          : JSON.stringify(attachmentsObj.leftHand);
       }
+      if (attachmentsObj.rightHand !== undefined) {
+        response.rightHand = typeof attachmentsObj.rightHand === "string" 
+          ? attachmentsObj.rightHand 
+          : JSON.stringify(attachmentsObj.rightHand);
+      }
+      // Note: handColor is stored but not returned to client
+      // The client doesn't seem to support persisting hand colors via server
+      // They may be client-side only or handled differently
+
+      return response;
     },
     {
       cookie: t.Object({
