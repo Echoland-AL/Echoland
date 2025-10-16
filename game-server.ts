@@ -395,11 +395,6 @@ const app = new Elysia()
         ? JSON.parse(account.attachments || "{}") 
         : (account.attachments ?? {});
       
-      // Prepare hand color response
-      const handColorResponse = account.handColor 
-        ? (typeof account.handColor === "string" ? account.handColor : JSON.stringify(account.handColor))
-        : undefined;
-      
       return {
         vMaj: 188,
         vMinSrv: 1,
@@ -419,7 +414,8 @@ const app = new Elysia()
         rightHand: attachmentsObj["7"] !== undefined
           ? (typeof attachmentsObj["7"] === "string" ? attachmentsObj["7"] : JSON.stringify(attachmentsObj["7"]))
           : undefined,
-        handColor: handColorResponse,
+        leftHandColor: account.handColor ? JSON.stringify(account.handColor) : undefined,
+        rightHandColor: account.handColor ? JSON.stringify(account.handColor) : undefined,
         isSoftBanned: false,
         showFlagWarning: false,
         flagTags: [],
