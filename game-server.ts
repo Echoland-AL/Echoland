@@ -390,6 +390,11 @@ const app = new Elysia()
       ast.value = `s:${generateObjectId()}`
       ast.httpOnly = true
 
+      // Extract hands from attachments if they exist
+      const attachmentsObj = typeof account.attachments === "string" 
+        ? JSON.parse(account.attachments || "{}") 
+        : (account.attachments ?? {});
+      
       return {
         vMaj: 188,
         vMinSrv: 1,
@@ -403,17 +408,14 @@ const app = new Elysia()
         attachments: typeof account.attachments === "string"
           ? account.attachments
           : JSON.stringify(account.attachments ?? {}),
-        leftHand: account.leftHand !== undefined 
-          ? (typeof account.leftHand === "string" ? account.leftHand : JSON.stringify(account.leftHand))
+        leftHand: attachmentsObj.leftHand !== undefined 
+          ? (typeof attachmentsObj.leftHand === "string" ? attachmentsObj.leftHand : JSON.stringify(attachmentsObj.leftHand))
           : undefined,
-        rightHand: account.rightHand !== undefined
-          ? (typeof account.rightHand === "string" ? account.rightHand : JSON.stringify(account.rightHand))
+        rightHand: attachmentsObj.rightHand !== undefined
+          ? (typeof attachmentsObj.rightHand === "string" ? attachmentsObj.rightHand : JSON.stringify(attachmentsObj.rightHand))
           : undefined,
-        leftHandColor: account.leftHandColor !== undefined
-          ? (typeof account.leftHandColor === "string" ? account.leftHandColor : JSON.stringify(account.leftHandColor))
-          : undefined,
-        rightHandColor: account.rightHandColor !== undefined
-          ? (typeof account.rightHandColor === "string" ? account.rightHandColor : JSON.stringify(account.rightHandColor))
+        handColor: account.handColor !== undefined
+          ? (typeof account.handColor === "string" ? account.handColor : JSON.stringify(account.handColor))
           : undefined,
         isSoftBanned: false,
         showFlagWarning: false,
@@ -462,33 +464,29 @@ const app = new Elysia()
       currentAttachments = accountData.attachments as Record<string, any>;
     }
 
-    // Handle hand attachments separately
+    // Handle hand attachments - store in attachments object
     if (leftHand !== undefined) {
       let parsedLeftHand: any = leftHand;
       if (typeof leftHand === "string") {
         try { parsedLeftHand = JSON.parse(leftHand); } catch {
-          return new Response(JSON.stringify({ ok: false, error: "leftHand must be JSON string" }), {
-            status: 422,
-            headers: { "Content-Type": "application/json" }
-          });
+          // Keep as string if not JSON
         }
       }
-      accountData.leftHand = parsedLeftHand;
-      console.log("[ATTACHMENT] Updated left hand:", parsedLeftHand);
+      currentAttachments.leftHand = parsedLeftHand;
+      accountData.attachments = currentAttachments;
+      console.log("[ATTACHMENT] Updated left hand in attachments:", parsedLeftHand);
     }
 
     if (rightHand !== undefined) {
       let parsedRightHand: any = rightHand;
       if (typeof rightHand === "string") {
         try { parsedRightHand = JSON.parse(rightHand); } catch {
-          return new Response(JSON.stringify({ ok: false, error: "rightHand must be JSON string" }), {
-            status: 422,
-            headers: { "Content-Type": "application/json" }
-          });
+          // Keep as string if not JSON
         }
       }
-      accountData.rightHand = parsedRightHand;
-      console.log("[ATTACHMENT] Updated right hand:", parsedRightHand);
+      currentAttachments.rightHand = parsedRightHand;
+      accountData.attachments = currentAttachments;
+      console.log("[ATTACHMENT] Updated right hand in attachments:", parsedRightHand);
     }
 
     if (attachments !== undefined) {
@@ -516,19 +514,11 @@ const app = new Elysia()
         }
       }
       
-      // Check if this is a hand slot (typically slots like "leftHand" or "rightHand")
+      // Store all attachments (including hands) in the attachments object
       const slotId = String(id);
-      if (slotId === "leftHand" || slotId === "LeftHand") {
-        accountData.leftHand = parsedData;
-        console.log("[ATTACHMENT] Updated left hand via id/data:", parsedData);
-      } else if (slotId === "rightHand" || slotId === "RightHand") {
-        accountData.rightHand = parsedData;
-        console.log("[ATTACHMENT] Updated right hand via id/data:", parsedData);
-      } else {
-        currentAttachments[slotId] = parsedData;
-        accountData.attachments = currentAttachments;
-        console.log(`[ATTACHMENT] Updated attachment slot ${slotId}`);
-      }
+      currentAttachments[slotId] = parsedData;
+      accountData.attachments = currentAttachments;
+      console.log(`[ATTACHMENT] Updated attachment slot ${slotId}:`, parsedData);
     } else if (leftHand === undefined && rightHand === undefined) {
       return new Response(JSON.stringify({ ok: false, error: "Missing attachments, (id,data), or hand data" }), {
         status: 422,
@@ -556,7 +546,7 @@ const app = new Elysia()
   })
   // Set hand color for avatar
   .post("/person/sethandcolor", async ({ body }) => {
-    const { leftHandColor, rightHandColor, handColor, r, g, b } = body as any;
+    const { handColor, r, g, b } = body as any;
 
     const accountPath = "./data/person/account.json";
     let accountData: Record<string, any> = {};
@@ -576,9 +566,8 @@ const app = new Elysia()
         g: parseFloat(g || "0"),
         b: parseFloat(b || "0")
       };
-      accountData.leftHandColor = colorObject;
-      accountData.rightHandColor = colorObject;
-      console.log("[HAND COLOR] Set both hands to RGB:", colorObject);
+      accountData.handColor = colorObject;
+      console.log("[HAND COLOR] Set hand color to RGB:", colorObject);
       
       await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
       return new Response(JSON.stringify({ ok: true }), {
@@ -587,7 +576,7 @@ const app = new Elysia()
       });
     }
 
-    // Handle hand color (can be a single color for both hands or separate colors)
+    // Handle hand color (single color for both hands)
     if (handColor !== undefined) {
       // Parse color if it's a string
       let parsedColor = handColor;
@@ -599,39 +588,9 @@ const app = new Elysia()
           parsedColor = handColor;
         }
       }
-      accountData.leftHandColor = parsedColor;
-      accountData.rightHandColor = parsedColor;
-      console.log("[HAND COLOR] Set both hands to:", parsedColor);
-    }
-
-    // Handle individual hand colors
-    if (leftHandColor !== undefined) {
-      let parsedColor = leftHandColor;
-      if (typeof leftHandColor === "string") {
-        try {
-          parsedColor = JSON.parse(leftHandColor);
-        } catch {
-          parsedColor = leftHandColor;
-        }
-      }
-      accountData.leftHandColor = parsedColor;
-      console.log("[HAND COLOR] Set left hand to:", parsedColor);
-    }
-
-    if (rightHandColor !== undefined) {
-      let parsedColor = rightHandColor;
-      if (typeof rightHandColor === "string") {
-        try {
-          parsedColor = JSON.parse(rightHandColor);
-        } catch {
-          parsedColor = rightHandColor;
-        }
-      }
-      accountData.rightHandColor = parsedColor;
-      console.log("[HAND COLOR] Set right hand to:", parsedColor);
-    }
-
-    if (handColor === undefined && leftHandColor === undefined && rightHandColor === undefined) {
+      accountData.handColor = parsedColor;
+      console.log("[HAND COLOR] Set hand color to:", parsedColor);
+    } else {
       return new Response(JSON.stringify({ ok: false, error: "Missing color data" }), {
         status: 422,
         headers: { "Content-Type": "application/json" }
@@ -647,8 +606,6 @@ const app = new Elysia()
   }, {
     body: t.Object({
       handColor: t.Optional(t.Union([t.String(), t.Any()])),
-      leftHandColor: t.Optional(t.Union([t.String(), t.Any()])),
-      rightHandColor: t.Optional(t.Union([t.String(), t.Any()])),
       r: t.Optional(t.String()),
       g: t.Optional(t.String()),
       b: t.Optional(t.String())
