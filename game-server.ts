@@ -108,12 +108,31 @@ async function initDefaults() {
     accountData = {
       personId,
       screenName,
-      homeAreaId
+      homeAreaId,
+      attachments: {},
+      handReplacements: {}
     };
 
     await fs.mkdir("./data/person", { recursive: true });
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
     console.log(`🧠 Memory card initialized for ${screenName}`);
+  }
+
+  // Ensure required fields exist for existing accounts
+  let needsUpdate = false;
+  if (!accountData.attachments) {
+    accountData.attachments = {};
+    needsUpdate = true;
+  }
+  if (!accountData.handReplacements) {
+    accountData.handReplacements = {};
+    needsUpdate = true;
+  }
+  
+  // Save updated account data if needed
+  if (needsUpdate) {
+    await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
+    console.log(`🔄 Updated account data with missing fields`);
   }
 
   // Create person info file
@@ -498,13 +517,16 @@ const app = new Elysia()
         // Special handling for wrist attachments (slots 6 and 7)
         if (slotId === "6" || slotId === "7") {
           console.log(`[WRIST] Processing wrist attachment in slot ${slotId}`);
+          console.log(`[WRIST] Parsed data:`, JSON.stringify(parsedData, null, 2));
           
-          // Check if this object has "replaces hand when worn" property
-          if (parsedData && typeof parsedData === 'object') {
-            const hasHandReplacement = parsedData.replacesHand || 
+            // Check if this object has "replaces hand when worn" property
+            if (parsedData && typeof parsedData === 'object') {
+              const hasHandReplacement = parsedData.replacesHand ||
                                      parsedData.replacesHandWhenWorn || 
                                      parsedData.handReplacement ||
-                                     (parsedData.properties && parsedData.properties.replacesHand);
+                                     parsedData["REPLACES HAND WHEN WORN"] ||
+                                     (parsedData.properties && parsedData.properties.replacesHand) ||
+                                     (parsedData.properties && parsedData.properties["REPLACES HAND WHEN WORN"]);
             
             if (hasHandReplacement) {
               console.log(`[HAND REPLACEMENT] Object in wrist slot ${slotId} has hand replacement property`);
@@ -567,7 +589,12 @@ const app = new Elysia()
     // Store the hand color data
     const { r, g, b } = body as any;
     if (r !== undefined && g !== undefined && b !== undefined) {
-      accountData.handColor = { r, g, b };
+      // Convert to numbers to ensure proper data type
+      accountData.handColor = { 
+        r: parseFloat(r), 
+        g: parseFloat(g), 
+        b: parseFloat(b) 
+      };
       console.log("[HAND COLOR] Saved hand color:", accountData.handColor);
     } else {
       console.warn("[HAND COLOR] Missing r, g, b values:", body);
