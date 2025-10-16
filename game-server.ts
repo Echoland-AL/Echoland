@@ -372,36 +372,14 @@ const app = new Elysia()
       method: request.method,
       url: request.url,
     }));
-    
-    // Log all requests that might be related to hands/attachments
-    if (request.url.includes('hand') || request.url.includes('attachment') || request.url.includes('person')) {
-      console.log(`[HAND DEBUG] ${request.method} ${request.url}`);
-    }
   })
   .onError(({ code, error, request }) => {
     console.info("error in middleware!", request.url, code);
     console.log(error);
   })
-  .onTransform(({ path, body }) => {
-    if (path.includes("placement")) {
-      console.log("Placement route hit:", path, JSON.stringify(body, null, 2));
-    }
-    // Log all POST requests with body for debugging
-    if (path.includes("person") || path.includes("hand") || path.includes("attachment")) {
-      console.log(`[DEBUG] POST ${path}:`, JSON.stringify(body, null, 2));
-    }
-    // Log EVERY request to see what's actually being called
-    console.log(`[TRANSFORM] ${path}`);
-  })
-  .onTransform(({ path, body }) => {
-    if (path.includes("ach") || path.includes("p")) {
-      console.log(`[HEARTBEAT] ${path}:`, JSON.stringify(body));
-    }
-  })
-  .onTransform(({ path, body }) => {
-    if (path.includes("inventory")) {
-      console.log(`[INVENTORY] ${path}:`, JSON.stringify(body));
-    }
+  .onTransform(({ request, path, body, params }) => {
+    // Match Redux server's simple logging
+    console.log(request.method, path, { body, params })
   })
 
 
@@ -462,23 +440,6 @@ const app = new Elysia()
       })
     }
   )
-  // Save avatar body attachments to account.json
-  // Alternative endpoint names that might be used
-  .post("/person/setattachment", async ({ body }) => {
-    console.log("[SETATTACHMENT] Received request:", JSON.stringify(body));
-    // Redirect to updateattachment logic
-    return app.routes.find(r => r.path === '/person/updateattachment')!.handler({ body } as any);
-  })
-  .post("/person/updatehand", async ({ body }) => {
-    console.log("[UPDATEHAND] Received request:", JSON.stringify(body));
-    // Redirect to updateattachment logic
-    return app.routes.find(r => r.path === '/person/updateattachment')!.handler({ body } as any);
-  })
-  .post("/person/sethand", async ({ body }) => {
-    console.log("[SETHAND] Received request:", JSON.stringify(body));
-    // Redirect to updateattachment logic
-    return app.routes.find(r => r.path === '/person/updateattachment')!.handler({ body } as any);
-  })
   .post("/person/updateattachment", async ({ body }) => {
     console.log("[ATTACHMENT] Received request:", JSON.stringify(body));
     const { id, data, attachments } = body as any;
@@ -2373,14 +2334,6 @@ const app = new Elysia()
   )
   .get("/forum/forum/:id", ({ params: { id } }) => Bun.file(path.resolve("./data/forum/forum/", id + ".json")).json())
   .get("/forum/thread/:id", ({ params: { id } }) => Bun.file(path.resolve("./data/forum/thread/", id + ".json")).json())
-  // Catch-all route for debugging
-  .all("*", ({ request }) => {
-    console.log(`[CATCH-ALL] ${request.method} ${request.url}`);
-    return new Response(JSON.stringify({ error: "Not found" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" }
-    });
-  })
   .listen({
     hostname: HOST,
     port: PORT_API,
