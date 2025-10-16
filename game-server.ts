@@ -485,14 +485,26 @@ const app = new Elysia()
 
     const accountPath = "./data/person/account.json";
     let accountData: Record<string, any> = {};
-    try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-    } catch (e) {
-      console.error("[ATTACHMENT] Failed to read account:", e);
-      return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" }
-      });
+    
+    // Retry logic to handle concurrent writes
+    let retries = 5;
+    while (retries > 0) {
+      try {
+        const fileContent = await fs.readFile(accountPath, "utf-8");
+        accountData = JSON.parse(fileContent);
+        break;
+      } catch (e) {
+        retries--;
+        if (retries === 0) {
+          console.error("[ATTACHMENT] Failed to read account after retries:", e);
+          return new Response(JSON.stringify({ ok: false, error: "Account read failed" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
     }
 
     // Ensure attachments object exists in account
@@ -578,7 +590,26 @@ const app = new Elysia()
       });
     }
 
-    await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
+    // Atomic write with retry
+    let writeRetries = 5;
+    while (writeRetries > 0) {
+      try {
+        const tempPath = `${accountPath}.tmp`;
+        await fs.writeFile(tempPath, JSON.stringify(accountData, null, 2));
+        await fs.rename(tempPath, accountPath);
+        break;
+      } catch (e) {
+        writeRetries--;
+        if (writeRetries === 0) {
+          console.error("[ATTACHMENT] Failed to write account after retries:", e);
+          return new Response(JSON.stringify({ ok: false, error: "Account write failed" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
