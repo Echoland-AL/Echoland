@@ -390,13 +390,7 @@ const app = new Elysia()
       ast.value = `s:${generateObjectId()}`
       ast.httpOnly = true
 
-      // Extract hands from attachments if they exist
-      const attachmentsObj = typeof account.attachments === "string" 
-        ? JSON.parse(account.attachments || "{}") 
-        : (account.attachments ?? {});
-      
-      // Build response object
-      const response: any = {
+      return {
         vMaj: 188,
         vMinSrv: 1,
         personId: account.personId,
@@ -426,23 +420,6 @@ const app = new Elysia()
         wasEditToolsTrialEverActivated: false,
         customSearchWords: ""
       };
-
-      // Add optional fields if they exist
-      if (attachmentsObj.leftHand !== undefined) {
-        response.leftHand = typeof attachmentsObj.leftHand === "string" 
-          ? attachmentsObj.leftHand 
-          : JSON.stringify(attachmentsObj.leftHand);
-      }
-      if (attachmentsObj.rightHand !== undefined) {
-        response.rightHand = typeof attachmentsObj.rightHand === "string" 
-          ? attachmentsObj.rightHand 
-          : JSON.stringify(attachmentsObj.rightHand);
-      }
-      // Note: handColor is stored but not returned to client
-      // The client doesn't seem to support persisting hand colors via server
-      // They may be client-side only or handled differently
-
-      return response;
     },
     {
       cookie: t.Object({
@@ -452,7 +429,7 @@ const app = new Elysia()
   )
   // Save avatar body attachments to account.json
   .post("/person/updateattachment", async ({ body }) => {
-    const { id, data, attachments, leftHand, rightHand } = body as any;
+    const { id, data, attachments } = body as any;
 
     const accountPath = "./data/person/account.json";
     let accountData: Record<string, any> = {};
@@ -473,31 +450,6 @@ const app = new Elysia()
       currentAttachments = accountData.attachments as Record<string, any>;
     }
 
-    // Handle hand attachments - store in attachments object
-    if (leftHand !== undefined) {
-      let parsedLeftHand: any = leftHand;
-      if (typeof leftHand === "string") {
-        try { parsedLeftHand = JSON.parse(leftHand); } catch {
-          // Keep as string if not JSON
-        }
-      }
-      currentAttachments.leftHand = parsedLeftHand;
-      accountData.attachments = currentAttachments;
-      console.log("[ATTACHMENT] Updated left hand in attachments:", parsedLeftHand);
-    }
-
-    if (rightHand !== undefined) {
-      let parsedRightHand: any = rightHand;
-      if (typeof rightHand === "string") {
-        try { parsedRightHand = JSON.parse(rightHand); } catch {
-          // Keep as string if not JSON
-        }
-      }
-      currentAttachments.rightHand = parsedRightHand;
-      accountData.attachments = currentAttachments;
-      console.log("[ATTACHMENT] Updated right hand in attachments:", parsedRightHand);
-    }
-
     if (attachments !== undefined) {
       // Full replacement path
       let parsed: unknown = attachments;
@@ -512,7 +464,7 @@ const app = new Elysia()
       accountData.attachments = parsed;
       console.log("[ATTACHMENT] Updated full attachments");
     } else if (id !== undefined && data !== undefined) {
-      // Incremental update path: single slot
+      // Incremental update path: single slot (including hands which are just numbered slots)
       let parsedData: any = data;
       if (typeof data === "string") {
         try { parsedData = JSON.parse(data); } catch {
@@ -523,13 +475,13 @@ const app = new Elysia()
         }
       }
       
-      // Store all attachments (including hands) in the attachments object
+      // Store attachment in the numbered slot
       const slotId = String(id);
       currentAttachments[slotId] = parsedData;
       accountData.attachments = currentAttachments;
       console.log(`[ATTACHMENT] Updated attachment slot ${slotId}:`, parsedData);
-    } else if (leftHand === undefined && rightHand === undefined) {
-      return new Response(JSON.stringify({ ok: false, error: "Missing attachments, (id,data), or hand data" }), {
+    } else {
+      return new Response(JSON.stringify({ ok: false, error: "Missing attachments or (id,data)" }), {
         status: 422,
         headers: { "Content-Type": "application/json" }
       });
@@ -546,79 +498,19 @@ const app = new Elysia()
       t.Object({
         attachments: t.Union([t.String(), t.Record(t.String(), t.Any())])
       }),
-      t.Object({ id: t.Union([t.String(), t.Number()]), data: t.String() }),
-      t.Object({ 
-        leftHand: t.Optional(t.Union([t.String(), t.Any()])),
-        rightHand: t.Optional(t.Union([t.String(), t.Any()]))
-      })
+      t.Object({ id: t.Union([t.String(), t.Number()]), data: t.String() })
     ])
   })
-  // Set hand color for avatar
+  // Set hand color for avatar (client-side only, not persisted)
   .post("/person/sethandcolor", async ({ body }) => {
-    const { handColor, r, g, b } = body as any;
-
-    const accountPath = "./data/person/account.json";
-    let accountData: Record<string, any> = {};
-    try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-    } catch {
-      return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    // Handle RGB color format (what the client actually sends)
-    if (r !== undefined || g !== undefined || b !== undefined) {
-      const colorObject = {
-        r: parseFloat(r || "0"),
-        g: parseFloat(g || "0"),
-        b: parseFloat(b || "0")
-      };
-      accountData.handColor = colorObject;
-      console.log("[HAND COLOR] Set hand color to RGB:", colorObject);
-      
-      await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    // Handle hand color (single color for both hands)
-    if (handColor !== undefined) {
-      // Parse color if it's a string
-      let parsedColor = handColor;
-      if (typeof handColor === "string") {
-        try {
-          parsedColor = JSON.parse(handColor);
-        } catch {
-          // Might be a color string like "255,255,255" or "#ffffff"
-          parsedColor = handColor;
-        }
-      }
-      accountData.handColor = parsedColor;
-      console.log("[HAND COLOR] Set hand color to:", parsedColor);
-    } else {
-      return new Response(JSON.stringify({ ok: false, error: "Missing color data" }), {
-        status: 422,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
-
+    // Hand colors are not persisted on the server in original Anyland
+    // This endpoint exists to prevent errors, but doesn't save anything
+    console.log("[HAND COLOR] Client set hand color (not persisted):", body);
+    
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });
-  }, {
-    body: t.Object({
-      handColor: t.Optional(t.Union([t.String(), t.Any()])),
-      r: t.Optional(t.String()),
-      g: t.Optional(t.String()),
-      b: t.Optional(t.String())
-    })
   })
   .post("/p", () => ({ "vMaj": 188, "vMinSrv": 1 }))
   .post(
