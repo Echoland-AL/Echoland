@@ -1718,7 +1718,9 @@ const app = new Elysia()
   .post("/thing", async ({ body }) => {
     const { name = "" } = body;
     const thingId = generateObjectId();
-    const filePath = `./data/thing/info/${thingId}.json`;
+    const infoPath = `./data/thing/info/${thingId}.json`;
+    const defPath = `./data/thing/def/${thingId}.json`;
+    const tagsPath = `./data/thing/tags/${thingId}.json`;
 
     // ✅ Load identity from account.json
     let creatorId = "unknown";
@@ -1731,8 +1733,8 @@ const app = new Elysia()
       console.warn("⚠️ Could not load account.json for object metadata.", e);
     }
 
-    // ✅ Build object with correct identity
-    const thingData = {
+    // ✅ Build thinginfo object
+    const thingInfo = {
       id: thingId,
       name,
       creatorId,
@@ -1744,8 +1746,28 @@ const app = new Elysia()
       isUnlisted: false
     };
 
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify(thingData, null, 2));
+    // ✅ Build thingdef object (3D object data)
+    const thingDef = {
+      name,
+      // Empty 3D object data - will be populated when user builds the object
+      // This matches the structure from the example def file
+    };
+
+    // ✅ Build thingtags object
+    const thingTags = {
+      tags: []
+    };
+
+    // Create directories and save all three files
+    await fs.mkdir(path.dirname(infoPath), { recursive: true });
+    await fs.mkdir(path.dirname(defPath), { recursive: true });
+    await fs.mkdir(path.dirname(tagsPath), { recursive: true });
+    
+    await fs.writeFile(infoPath, JSON.stringify(thingInfo, null, 2));
+    await fs.writeFile(defPath, JSON.stringify(thingDef, null, 2));
+    await fs.writeFile(tagsPath, JSON.stringify(thingTags, null, 2));
+
+    console.log(`✅ Created thing ${thingId} with info, def, and tags files`);
 
     // Update topby list for the creator
     try {
