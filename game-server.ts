@@ -410,6 +410,8 @@ const app = new Elysia()
         attachments: typeof account.attachments === "string"
           ? account.attachments
           : JSON.stringify(account.attachments ?? {}),
+        leftHand: account.handReplacements?.leftHand ? JSON.stringify(account.handReplacements.leftHand) : undefined,
+        rightHand: account.handReplacements?.rightHand ? JSON.stringify(account.handReplacements.rightHand) : undefined,
         isSoftBanned: false,
         showFlagWarning: false,
         flagTags: [],
@@ -490,6 +492,32 @@ const app = new Elysia()
               status: 422,
               headers: { "Content-Type": "application/json" }
             });
+          }
+        }
+        
+        // Check if this object has "replaces hand when worn" property
+        if (parsedData && typeof parsedData === 'object') {
+          // Check for hand replacement properties
+          const hasHandReplacement = parsedData.replacesHand || 
+                                   parsedData.replacesHandWhenWorn || 
+                                   parsedData.handReplacement ||
+                                   (parsedData.properties && parsedData.properties.replacesHand);
+          
+          if (hasHandReplacement) {
+            console.log(`[HAND REPLACEMENT] Object in slot ${slotId} has hand replacement property`);
+            // Store as hand replacement data
+            if (!accountData.handReplacements) {
+              accountData.handReplacements = {};
+            }
+            
+            // Determine which hand based on slot ID
+            if (slotId === "6" || slotId === "8") {
+              accountData.handReplacements.leftHand = parsedData;
+              console.log(`[HAND REPLACEMENT] Set left hand replacement`);
+            } else if (slotId === "7" || slotId === "9") {
+              accountData.handReplacements.rightHand = parsedData;
+              console.log(`[HAND REPLACEMENT] Set right hand replacement`);
+            }
           }
         }
         
