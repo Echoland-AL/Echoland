@@ -390,6 +390,8 @@ const app = new Elysia()
     if (path.includes("person") || path.includes("hand") || path.includes("attachment")) {
       console.log(`[DEBUG] POST ${path}:`, JSON.stringify(body, null, 2));
     }
+    // Log EVERY request to see what's actually being called
+    console.log(`[TRANSFORM] ${path}`);
   })
   .onTransform(({ path, body }) => {
     if (path.includes("ach") || path.includes("p")) {
@@ -433,9 +435,8 @@ const app = new Elysia()
         attachments: typeof account.attachments === "string"
           ? account.attachments
           : JSON.stringify(account.attachments ?? {}),
-        // leftHand and rightHand should NOT be returned - client handles this via wrist attachments
-        // leftHand: account.handReplacements?.leftHand || account.attachments?.leftHand || undefined,
-        // rightHand: account.handReplacements?.rightHand || account.attachments?.rightHand || undefined,
+        leftHandColor: account.handColor || undefined,
+        rightHandColor: account.handColor || undefined,
         isSoftBanned: false,
         showFlagWarning: false,
         flagTags: [],
