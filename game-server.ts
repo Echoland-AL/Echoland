@@ -1815,6 +1815,116 @@ const app = new Elysia()
       headers: { "Content-Type": "application/json" }
     });
   })
+  // ✅ HAND REPLACEMENT SUPPORT
+  // Thing definitions can include attribute flag 22 to enable "replaces hand when worn"
+  // Example: { "n": "My Hand", "a": [22], "p": [...geometry data...] }
+  // When a thing with attribute 22 is attached to wrist slots (6 or 7),
+  // the client automatically renders it as a hand replacement
+  .post("/thing/updateDefinition", async ({ body }) => {
+    const { thingId, id, definition, data } = body;
+    const actualThingId = thingId || id;
+    const actualDefinition = definition || data;
+
+    if (!actualThingId || !actualDefinition) {
+      return new Response(JSON.stringify({ ok: false, error: "Missing thingId or definition" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const defPath = `./data/thing/def/${actualThingId}.json`;
+    
+    try {
+      // Parse the definition if it's a string
+      const defData = typeof actualDefinition === "string" ? JSON.parse(actualDefinition) : actualDefinition;
+      
+      // Save the complete definition
+      await fs.writeFile(defPath, JSON.stringify(defData, null, 2));
+      
+      console.log(`✅ Updated thing definition for ${actualThingId}${defData.a ? ` with attributes: ${JSON.stringify(defData.a)}` : ''}`);
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (e) {
+      console.error(`❌ Failed to update thing definition for ${actualThingId}:`, e);
+      return new Response(JSON.stringify({ ok: false, error: String(e) }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  }, {
+    body: t.Any() // Accept any shape since client may send different formats
+  })
+  // Alternative endpoint names for compatibility
+  .post("/thing/saveDefinition", async ({ body }) => {
+    // Redirect to updateDefinition
+    const { thingId, id, definition, data } = body;
+    const actualThingId = thingId || id;
+    const actualDefinition = definition || data;
+
+    if (!actualThingId || !actualDefinition) {
+      return new Response(JSON.stringify({ ok: false, error: "Missing thingId or definition" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const defPath = `./data/thing/def/${actualThingId}.json`;
+    
+    try {
+      const defData = typeof actualDefinition === "string" ? JSON.parse(actualDefinition) : actualDefinition;
+      await fs.writeFile(defPath, JSON.stringify(defData, null, 2));
+      console.log(`✅ Saved thing definition for ${actualThingId}${defData.a ? ` with attributes: ${JSON.stringify(defData.a)}` : ''}`);
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (e) {
+      console.error(`❌ Failed to save thing definition for ${actualThingId}:`, e);
+      return new Response(JSON.stringify({ ok: false, error: String(e) }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  }, {
+    body: t.Any()
+  })
+  .put("/thing/:id", async ({ body, params }) => {
+    // Alternative PUT endpoint
+    const thingId = params.id;
+    const actualDefinition = body.definition || body.data || body;
+
+    if (!thingId || !actualDefinition) {
+      return new Response(JSON.stringify({ ok: false, error: "Missing data" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const defPath = `./data/thing/def/${thingId}.json`;
+    
+    try {
+      const defData = typeof actualDefinition === "string" ? JSON.parse(actualDefinition) : actualDefinition;
+      await fs.writeFile(defPath, JSON.stringify(defData, null, 2));
+      console.log(`✅ PUT thing definition for ${thingId}${defData.a ? ` with attributes: ${JSON.stringify(defData.a)}` : ''}`);
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (e) {
+      console.error(`❌ Failed to PUT thing definition for ${thingId}:`, e);
+      return new Response(JSON.stringify({ ok: false, error: String(e) }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  }, {
+    body: t.Any()
+  })
   .post("/thing/rename", async ({ body }) => {
     const { thingId, newName } = body;
 
