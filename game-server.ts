@@ -510,12 +510,9 @@ const app = new Elysia()
           }
         }
         
-        // Wrist attachments (slots 6 and 7) are just regular attachments
-        // The client handles "replaces hand when worn" logic by checking thing definitions
+        // Check if this is a hand replacement item (attribute 22)
+        // If so, return 404 like Redux server does - client handles it locally
         if (slotId === "6" || slotId === "7") {
-          console.log(`[WRIST] Storing wrist attachment in slot ${slotId}: ${JSON.stringify(parsedData)}`);
-          
-          // Check if this thing has the hand replacement attribute
           const thingId = parsedData.Tid;
           if (thingId) {
             try {
@@ -523,15 +520,10 @@ const app = new Elysia()
               const defFile = Bun.file(defPath);
               if (await defFile.exists()) {
                 const def = await defFile.json();
-                console.log(`[WRIST] Thing ${thingId} attributes:`, def.a || "NONE");
                 if (def.a && Array.isArray(def.a) && def.a.includes(22)) {
-                  console.log(`[WRIST] ✅ Thing ${thingId} HAS hand replacement attribute (22)!`);
-                } else {
-                  console.log(`[WRIST] ⚠️ Thing ${thingId} DOES NOT have hand replacement attribute!`);
-                  console.log(`[WRIST] Thing definition:`, JSON.stringify(def).substring(0, 200));
+                  console.log(`[WRIST] Hand replacement detected for ${thingId} - returning 404 to let client handle it`);
+                  return new Response("Not found", { status: 404 });
                 }
-              } else {
-                console.log(`[WRIST] ⚠️ Thing definition not found for ${thingId}`);
               }
             } catch (e) {
               console.error(`[WRIST] Error checking thing definition:`, e);
