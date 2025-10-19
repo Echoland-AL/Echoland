@@ -407,7 +407,7 @@ const app = new Elysia()
       
       console.log("[AUTH] Attachments:", attachmentsString.substring(0, 200) + "...");
       
-      // Match Redux server format EXACTLY - no extra fields!
+      // Match Redux server format with proper values
       return {
         vMaj: 188,
         vMinSrv: 1,
@@ -416,20 +416,25 @@ const app = new Elysia()
         screenName: account.screenName,
         statusText: `exploring around (my id: ${account.personId})`,
         isFindable: true,
-        age: 0,
-        ageSecs: 0,
+        age: account.age || 2226,
+        ageSecs: account.ageSecs || 192371963,
         attachments: attachmentsString,
         isSoftBanned: false,
         showFlagWarning: false,
         flagTags: [],
-        areaCount: 1,
+        areaCount: account.ownedAreas?.length || 1,
         thingTagCount: 1,
         allThingsClonable: true,
-        achievements: [],
+        // Include default achievements like Redux server
+        achievements: account.achievements || [
+          30, 7, 19, 4, 20, 11, 10,
+          5, 9, 17, 13, 12, 16, 37,
+          34, 35, 44, 31, 15, 27, 28
+        ],
         hasEditTools: true,
-        hasEditToolsPermanently: false,
+        hasEditToolsPermanently: true,
         editToolsExpiryDate: '2024-01-30T15:26:27.720Z',
-        isInEditToolsTrial: true,
+        isInEditToolsTrial: false,
         wasEditToolsTrialEverActivated: true,
         customSearchWords: ''
       };
@@ -510,25 +515,10 @@ const app = new Elysia()
           }
         }
         
-        // Check if this is a hand replacement item (attribute 22)
-        // If so, return 404 like Redux server does - client handles it locally
+        // Wrist attachments (slots 6 and 7) are just regular attachments
+        // The client handles "replaces hand when worn" logic by checking thing definitions
         if (slotId === "6" || slotId === "7") {
-          const thingId = parsedData.Tid;
-          if (thingId) {
-            try {
-              const defPath = `./data/thing/def/${thingId}.json`;
-              const defFile = Bun.file(defPath);
-              if (await defFile.exists()) {
-                const def = await defFile.json();
-                if (def.a && Array.isArray(def.a) && def.a.includes(22)) {
-                  console.log(`[WRIST] Hand replacement detected for ${thingId} - returning 404 to let client handle it`);
-                  return new Response("Not found", { status: 404 });
-                }
-              }
-            } catch (e) {
-              console.error(`[WRIST] Error checking thing definition:`, e);
-            }
-          }
+          console.log(`[WRIST] Storing wrist attachment in slot ${slotId}`);
         }
         
         // Store attachment in the numbered slot
