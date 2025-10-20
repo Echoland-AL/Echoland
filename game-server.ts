@@ -407,8 +407,8 @@ const app = new Elysia()
       
       console.log("[AUTH] Attachments:", attachmentsString.substring(0, 200) + "...");
       
-      // Match Redux server format with proper values
-      return {
+      // Build response object
+      const authResponse: any = {
         vMaj: 188,
         vMinSrv: 1,
         personId: account.personId,
@@ -438,6 +438,14 @@ const app = new Elysia()
         wasEditToolsTrialEverActivated: true,
         customSearchWords: ''
       };
+      
+      // Include saved hand color if it exists (for persistence across sessions)
+      if (account.handColor) {
+        authResponse.handColor = account.handColor;
+        console.log("[AUTH] Returning saved hand color:", account.handColor);
+      }
+      
+      return authResponse;
     },
     {
       cookie: t.Object({
