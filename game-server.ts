@@ -3,6 +3,32 @@ import { Elysia, t } from 'elysia'
 import * as fs from "node:fs/promises";
 import { AreaInfoSchema } from "./lib/schemas";
 
+// Simple mutex for preventing concurrent account.json modifications
+class AsyncMutex {
+  private mutex = Promise.resolve();
+
+  lock(): Promise<() => void> {
+    let release: () => void;
+    const acquire = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const prevMutex = this.mutex;
+    this.mutex = prevMutex.then(() => acquire);
+    return prevMutex.then(() => release!);
+  }
+
+  async runExclusive<T>(callback: () => Promise<T>): Promise<T> {
+    const release = await this.lock();
+    try {
+      return await callback();
+    } finally {
+      release();
+    }
+  }
+}
+
+const accountMutex = new AsyncMutex();
+
 const HOST = Bun.env.HOST ?? "0.0.0.0";
 const PORT_API = Number(Bun.env.PORT_API ?? 8000);
 const PORT_CDN_THINGDEFS = Number(Bun.env.PORT_CDN_THINGDEFS ?? 8001);
@@ -454,117 +480,102 @@ const app = new Elysia()
     }
   )
   .post("/person/updateattachment", async ({ body }) => {
-    console.log("[ATTACHMENT] Received request:", JSON.stringify(body));
-    const { id, data, attachments } = body as any;
+    return await accountMutex.runExclusive(async () => {
+      console.log("[ATTACHMENT] Received request:", JSON.stringify(body));
+      const { id, data, attachments } = body as any;
 
-    const accountPath = "./data/person/account.json";
-    let accountData: Record<string, any> = {};
-    
-    // Retry logic to handle concurrent writes
-    let retries = 5;
-    while (retries > 0) {
+      const accountPath = "./data/person/account.json";
+      let accountData: Record<string, any> = {};
+      
+      // Read account data
       try {
         const fileContent = await fs.readFile(accountPath, "utf-8");
         accountData = JSON.parse(fileContent);
-        break;
       } catch (e) {
-        retries--;
-        if (retries === 0) {
-          console.error("[ATTACHMENT] Failed to read account after retries:", e);
-          return new Response(JSON.stringify({ ok: false, error: "Account read failed" }), {
-            status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
-        }
-        // Wait a bit before retrying
-        await new Promise(resolve => setTimeout(resolve, 50));
+        console.error("[ATTACHMENT] Failed to read account:", e);
+        return new Response(JSON.stringify({ ok: false, error: "Account read failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
       }
-    }
 
-    // Ensure attachments object exists in account
-    let currentAttachments: Record<string, any> = {};
-    if (typeof accountData.attachments === "string") {
-      try { currentAttachments = JSON.parse(accountData.attachments) ?? {}; } catch { currentAttachments = {}; }
-    } else if (accountData.attachments && typeof accountData.attachments === "object") {
-      currentAttachments = accountData.attachments as Record<string, any>;
-    }
+      // Ensure attachments object exists in account
+      let currentAttachments: Record<string, any> = {};
+      if (typeof accountData.attachments === "string") {
+        try { currentAttachments = JSON.parse(accountData.attachments) ?? {}; } catch { currentAttachments = {}; }
+      } else if (accountData.attachments && typeof accountData.attachments === "object") {
+        currentAttachments = accountData.attachments as Record<string, any>;
+      }
 
-    if (attachments !== undefined) {
-      // Full replacement path
-      let parsed: unknown = attachments;
-      if (typeof attachments === "string") {
-        try { parsed = JSON.parse(attachments); } catch {
-          return new Response(JSON.stringify({ ok: false, error: "attachments must be JSON or JSON string" }), {
-            status: 422,
-            headers: { "Content-Type": "application/json" }
-          });
+      if (attachments !== undefined) {
+        // Full replacement path
+        let parsed: unknown = attachments;
+        if (typeof attachments === "string") {
+          try { parsed = JSON.parse(attachments); } catch {
+            return new Response(JSON.stringify({ ok: false, error: "attachments must be JSON or JSON string" }), {
+              status: 422,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
         }
-      }
-      accountData.attachments = parsed;
-      console.log("[ATTACHMENT] Updated full attachments");
-    } else if (id !== undefined && data !== undefined) {
-      // Incremental update path: single slot (including hands which are just numbered slots)
-      const slotId = String(id);
-      
-      // Empty string means remove this attachment
-      if (data === "" || data === null) {
-        delete currentAttachments[slotId];
-        accountData.attachments = currentAttachments;
-        console.log(`[ATTACHMENT] Removed attachment from slot ${slotId}`);
-      } else {
-        // Parse and store the attachment data
-      let parsedData: any = data;
-      if (typeof data === "string") {
-        try { parsedData = JSON.parse(data); } catch {
-          return new Response(JSON.stringify({ ok: false, error: "data must be JSON string" }), {
-            status: 422,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-      }
-      
-        // Wrist attachments (slots 6 and 7) are just regular attachments
-        // The client handles "replaces hand when worn" logic by checking thing definitions
-        if (slotId === "6" || slotId === "7") {
-          console.log(`[WRIST] Storing wrist attachment in slot ${slotId}`);
+        accountData.attachments = parsed;
+        console.log("[ATTACHMENT] Updated full attachments");
+      } else if (id !== undefined && data !== undefined) {
+        // Incremental update path: single slot (including hands which are just numbered slots)
+        const slotId = String(id);
+        
+        // Empty string means remove this attachment
+        if (data === "" || data === null) {
+          delete currentAttachments[slotId];
+          accountData.attachments = currentAttachments;
+          console.log(`[ATTACHMENT] Removed attachment from slot ${slotId}`);
+        } else {
+          // Parse and store the attachment data
+        let parsedData: any = data;
+        if (typeof data === "string") {
+          try { parsedData = JSON.parse(data); } catch {
+            return new Response(JSON.stringify({ ok: false, error: "data must be JSON string" }), {
+              status: 422,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
         }
         
-        // Store attachment in the numbered slot
-        currentAttachments[slotId] = parsedData;
-        accountData.attachments = currentAttachments;
-        console.log(`[ATTACHMENT] Updated attachment slot ${slotId}:`, parsedData);
+          // Wrist attachments (slots 6 and 7) are just regular attachments
+          // The client handles "replaces hand when worn" logic by checking thing definitions
+          if (slotId === "6" || slotId === "7") {
+            console.log(`[WRIST] Storing wrist attachment in slot ${slotId}`);
+          }
+          
+          // Store attachment in the numbered slot
+          currentAttachments[slotId] = parsedData;
+          accountData.attachments = currentAttachments;
+          console.log(`[ATTACHMENT] Updated attachment slot ${slotId}:`, parsedData);
+        }
+      } else {
+        return new Response(JSON.stringify({ ok: false, error: "Missing attachments or (id,data)" }), {
+          status: 422,
+          headers: { "Content-Type": "application/json" }
+        });
       }
-    } else {
-      return new Response(JSON.stringify({ ok: false, error: "Missing attachments or (id,data)" }), {
-        status: 422,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
 
-    // Atomic write with retry
-    let writeRetries = 5;
-    while (writeRetries > 0) {
+      // Atomic write
       try {
         const tempPath = `${accountPath}.tmp`;
         await fs.writeFile(tempPath, JSON.stringify(accountData, null, 2));
         await fs.rename(tempPath, accountPath);
-        break;
       } catch (e) {
-        writeRetries--;
-        if (writeRetries === 0) {
-          console.error("[ATTACHMENT] Failed to write account after retries:", e);
-          return new Response(JSON.stringify({ ok: false, error: "Account write failed" }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-        await new Promise(resolve => setTimeout(resolve, 50));
+        console.error("[ATTACHMENT] Failed to write account:", e);
+        return new Response(JSON.stringify({ ok: false, error: "Account write failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
       }
-    }
 
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
     });
   })
   // Set hand color for avatar
