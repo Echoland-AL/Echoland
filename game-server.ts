@@ -1351,6 +1351,78 @@ const app = new Elysia()
       placements: t.Array(t.String())
     })
   })
+  .post("/placement/setattr", async ({ body }) => {
+    const { areaId, placementId, attr } = body;
+    
+    if (!areaId || !placementId || attr === undefined) {
+      return new Response(JSON.stringify({ ok: false, error: "Missing required fields" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const placementPath = `./data/placement/info/${areaId}/${placementId}.json`;
+    
+    try {
+      // Read the placement file
+      const placementData = JSON.parse(await fs.readFile(placementPath, "utf-8"));
+      
+      // Update the attributes array
+      if (!Array.isArray(placementData.A)) {
+        placementData.A = [];
+      }
+      
+      // Parse attr as integer
+      const attrValue = parseInt(attr);
+      
+      // Check if attribute already exists
+      const attrIndex = placementData.A.indexOf(attrValue);
+      
+      if (attrIndex === -1) {
+        // Add the attribute if it doesn't exist
+        placementData.A.push(attrValue);
+      } else {
+        // Remove the attribute if it exists (toggle behavior)
+        placementData.A.splice(attrIndex, 1);
+      }
+      
+      // Write the updated placement back
+      await fs.writeFile(placementPath, JSON.stringify(placementData, null, 2));
+      
+      // Also update the area load file
+      const areaFilePath = `./data/area/load/${areaId}.json`;
+      try {
+        const areaData = JSON.parse(await fs.readFile(areaFilePath, "utf-8"));
+        
+        if (Array.isArray(areaData.placements)) {
+          const placementIndex = areaData.placements.findIndex((p: any) => p.Id === placementId);
+          if (placementIndex !== -1) {
+            areaData.placements[placementIndex].A = placementData.A;
+            await fs.writeFile(areaFilePath, JSON.stringify(areaData, null, 2));
+          }
+        }
+      } catch (e) {
+        console.error("[SETATTR] Failed to update area file:", e);
+      }
+      
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (error) {
+      console.error("[SETATTR] Error:", error);
+      return new Response(JSON.stringify({ ok: false, error: "Failed to update placement" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  }, {
+    body: t.Object({
+      areaId: t.String(),
+      placementId: t.String(),
+      attr: t.String()
+    })
+  })
   .post("person/info",
     async ({ body: { areaId, userId } }) => {
       const file = Bun.file(path.resolve("./data/person/info/", userId + ".json"))
