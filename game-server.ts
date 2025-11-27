@@ -3,6 +3,212 @@ import { Elysia, t } from 'elysia'
 import * as fs from "node:fs/promises";
 import { AreaInfoSchema } from "./lib/schemas";
 
+// ============== TRUE MULTIPLAYER SYSTEM ==============
+// One server handles multiple clients, each with their own profile
+// Clients identify themselves via X-Profile header or profile query param
+
+const ACCOUNTS_DIR = "./data/person/accounts";
+
+// Optional: Default profile for testing (set via DEFAULT_PROFILE env var)
+// When set, clients without a profile header will use this profile
+const DEFAULT_PROFILE = Bun.env.DEFAULT_PROFILE || "";
+
+// Session manager - maps session tokens to profile data
+interface SessionData {
+  profileName: string;
+  personId: string;
+  screenName: string;
+  homeAreaId: string;
+  connectedAt: Date;
+}
+
+class SessionManager {
+  private sessions = new Map<string, SessionData>();
+  private profileToSession = new Map<string, string>(); // profileName -> sessionToken
+  
+  createSession(profileName: string, accountData: any): string {
+    // Check if this profile already has an active session
+    const existingToken = this.profileToSession.get(profileName);
+    if (existingToken && this.sessions.has(existingToken)) {
+      console.log(`🔄 [SESSION] Profile "${profileName}" reconnected`);
+      return existingToken;
+    }
+    
+    const token = `s:${generateObjectId()}`;
+    const sessionData: SessionData = {
+      profileName,
+      personId: accountData.personId,
+      screenName: accountData.screenName,
+      homeAreaId: accountData.homeAreaId,
+      connectedAt: new Date()
+    };
+    
+    this.sessions.set(token, sessionData);
+    this.profileToSession.set(profileName, token);
+    console.log(`✅ [SESSION] Created session for "${profileName}" (${this.sessions.size} active)`);
+    return token;
+  }
+  
+  getSession(token: string): SessionData | undefined {
+    return this.sessions.get(token);
+  }
+  
+  getSessionByProfile(profileName: string): SessionData | undefined {
+    const token = this.profileToSession.get(profileName);
+    if (token) {
+      return this.sessions.get(token);
+    }
+    return undefined;
+  }
+  
+  removeSession(token: string): void {
+    const session = this.sessions.get(token);
+    if (session) {
+      this.profileToSession.delete(session.profileName);
+      this.sessions.delete(token);
+      console.log(`🔴 [SESSION] Removed session for "${session.profileName}" (${this.sessions.size} active)`);
+    }
+  }
+  
+  getActiveSessions(): SessionData[] {
+    return Array.from(this.sessions.values());
+  }
+  
+  getActiveCount(): number {
+    return this.sessions.size;
+  }
+}
+
+const sessionManager = new SessionManager();
+
+// Get account path for a specific profile
+function getAccountPathForProfile(profileName: string): string {
+  return `${ACCOUNTS_DIR}/${profileName}.json`;
+}
+
+// Legacy function - gets account path from session cookie
+// Used by endpoints that have access to cookie.ast
+function getAccountPath(cookie?: any): string {
+  if (cookie?.ast?.value) {
+    const session = sessionManager.getSession(cookie.ast.value);
+    if (session) {
+      return getAccountPathForProfile(session.profileName);
+    }
+  }
+  // Fallback for server initialization or when no session exists
+  console.warn("[WARN] getAccountPath called without valid session");
+  return `${ACCOUNTS_DIR}/_default.json`;
+}
+
+// Get account data from session
+async function getAccountFromSession(cookie?: any): Promise<{ account: Record<string, any> | null; profileName: string | null; session: SessionData | null }> {
+  if (cookie?.ast?.value) {
+    const session = sessionManager.getSession(cookie.ast.value);
+    if (session) {
+      const account = await loadAccountData(session.profileName);
+      return { account, profileName: session.profileName, session };
+    }
+  }
+  return { account: null, profileName: null, session: null };
+}
+
+// Load account data for a profile
+async function loadAccountData(profileName: string): Promise<Record<string, any> | null> {
+  try {
+    const accountPath = getAccountPathForProfile(profileName);
+    return JSON.parse(await fs.readFile(accountPath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+// Save account data for a profile
+async function saveAccountData(profileName: string, data: Record<string, any>): Promise<void> {
+  const accountPath = getAccountPathForProfile(profileName);
+  await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
+  await fs.writeFile(accountPath, JSON.stringify(data, null, 2));
+}
+
+// Generate a random username
+function generateRandomUsername(): string {
+  const adjectives = ["Swift", "Bright", "Shadow", "Mystic", "Cosmic", "Thunder", "Crystal", "Ember", "Frost", "Storm", "Golden", "Silver", "Azure", "Crimson", "Violet"];
+  const nouns = ["Wolf", "Phoenix", "Dragon", "Hawk", "Tiger", "Serpent", "Raven", "Fox", "Bear", "Lion", "Eagle", "Falcon", "Panther", "Lynx", "Owl"];
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  const num = Math.floor(Math.random() * 10000);
+  return `${adj}${noun}${num}`;
+}
+
+// List all existing profiles
+async function listProfiles(): Promise<string[]> {
+  try {
+    await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
+    const files = await fs.readdir(ACCOUNTS_DIR);
+    return files
+      .filter((f: string) => f.endsWith('.json'))
+      .map((f: string) => f.replace('.json', ''));
+  } catch {
+    return [];
+  }
+}
+
+// Create a new profile (does NOT create .bat files anymore - server is centralized)
+async function createNewProfile(profileName: string): Promise<{ profileName: string; accountData: any }> {
+  const personId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+  const homeAreaId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+  
+  const accountData = {
+    personId,
+    screenName: profileName,
+    homeAreaId,
+    attachments: {}
+  };
+  
+  await saveAccountData(profileName, accountData);
+  
+  console.log(`✨ [PROFILE] Created new profile: ${profileName}`);
+  console.log(`   Person ID: ${personId}`);
+  
+  return { profileName, accountData };
+}
+
+// Helper to get profile from request (via header, cookie, or query param)
+function getProfileFromRequest(request: Request, cookie?: any): string | null {
+  // 1. Check X-Profile header
+  const headerProfile = request.headers.get("X-Profile");
+  if (headerProfile) return headerProfile;
+  
+  // 2. Check query parameter
+  const url = new URL(request.url);
+  const queryProfile = url.searchParams.get("profile");
+  if (queryProfile) return queryProfile;
+  
+  // 3. Check cookie (ast cookie contains session token, we can look up profile from it)
+  if (cookie?.ast?.value) {
+    const session = sessionManager.getSession(cookie.ast.value);
+    if (session) return session.profileName;
+  }
+  
+  return null;
+}
+
+// Helper to get session data from request
+function getSessionFromRequest(request: Request, cookie?: any): SessionData | null {
+  // First check cookie for session token
+  if (cookie?.ast?.value) {
+    const session = sessionManager.getSession(cookie.ast.value);
+    if (session) return session;
+  }
+  
+  // Fallback: look up by profile name
+  const profileName = getProfileFromRequest(request, cookie);
+  if (profileName) {
+    return sessionManager.getSessionByProfile(profileName) || null;
+  }
+  
+  return null;
+}
+
 // Simple mutex for preventing concurrent account.json modifications
 class AsyncMutex {
   private mutex = Promise.resolve();
@@ -119,51 +325,65 @@ async function injectInitialAreaToList(areaId: string, areaName: string) {
 
 // removed duplicate default imports; using namespace imports declared above
 
-async function initDefaults() {
-  const accountPath = "./data/person/account.json";
-
-  let accountData: Record<string, any> = {};
-  try {
-    accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-  } catch {
-    // Create new identity
-    const personId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-    const screenName = "User" + Math.floor(Math.random() * 10000);
-    const homeAreaId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-
-    accountData = {
-      personId,
-      screenName,
-      homeAreaId,
-      attachments: {}
-    };
-
-    await fs.mkdir("./data/person", { recursive: true });
-    await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
-    console.log(`🧠 Memory card initialized for ${screenName}`);
-  }
-
-  // Ensure required fields exist for existing accounts
-  let needsUpdate = false;
-  if (!accountData.attachments) {
-    accountData.attachments = {};
-    needsUpdate = true;
+// Initialize server (creates necessary directories, no profile needed)
+async function initServer() {
+  console.log("\n🌐 ============== ECHOLAND MULTIPLAYER SERVER ==============");
+  console.log("   Multiple clients can connect with different profiles");
+  console.log("   Clients identify via X-Profile header or ?profile= param\n");
+  
+  // Create necessary directories
+  await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
+  await fs.mkdir("./data/person/info", { recursive: true });
+  await fs.mkdir("./data/area/info", { recursive: true });
+  await fs.mkdir("./data/area/load", { recursive: true });
+  await fs.mkdir("./data/area/bundle", { recursive: true });
+  await fs.mkdir("./data/area/subareas", { recursive: true });
+  
+  // Show default profile if set
+  if (DEFAULT_PROFILE) {
+    console.log(`🎮 Default profile: ${DEFAULT_PROFILE}`);
+    console.log(`   (Clients without a profile header will use this)`);
   }
   
-  // Save updated account data if needed
-  if (needsUpdate) {
-    await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
-    console.log(`🔄 Updated account data with missing fields`);
+  // List existing profiles
+  const existingProfiles = await listProfiles();
+  if (existingProfiles.length > 0) {
+    console.log(`📋 Available profiles: ${existingProfiles.join(", ")}`);
+  } else {
+    console.log(`📋 No profiles yet. Clients can create profiles via /auth/start`);
   }
+  console.log("");
+}
 
-  // Create person info file
-  const infoPath = `./data/person/info/${accountData.personId}.json`;
+// Setup a profile for a connecting client (creates home area if needed)
+async function setupClientProfile(profileName: string): Promise<{ accountData: Record<string, any>; isNew: boolean }> {
+  let accountData: Record<string, any> | null = await loadAccountData(profileName);
+  let isNew = false;
+  
+  if (!accountData) {
+    // Create new profile
+    const result = await createNewProfile(profileName);
+    accountData = result.accountData;
+    isNew = true;
+  }
+  
+  // At this point accountData is guaranteed to be non-null
+  const account: Record<string, any> = accountData;
+  
+  // Ensure required fields exist
+  if (!account.attachments) {
+    account.attachments = {};
+    await saveAccountData(profileName, account);
+  }
+  
+  // Create person info file if needed
+  const infoPath = `./data/person/info/${account.personId}.json`;
   try {
     await fs.access(infoPath);
   } catch {
     const personInfo = {
-      id: accountData.personId,
-      screenName: accountData.screenName,
+      id: account.personId,
+      screenName: account.screenName,
       age: 0,
       statusText: "",
       isFindable: true,
@@ -176,99 +396,86 @@ async function initDefaults() {
       isAreaLocked: false,
       isOnline: true
     };
-
-    await fs.mkdir("./data/person/info", { recursive: true });
     await fs.writeFile(infoPath, JSON.stringify(personInfo, null, 2));
-    console.log(`📇 Created person info file for ${accountData.screenName}`);
+    console.log(`📇 [PROFILE] Created person info for ${account.screenName}`);
   }
-  // Check if home area already exists
-  const areaInfoPath = `./data/area/info/${accountData.homeAreaId}.json`;
-
+  
+  // Create home area if needed
+  const areaInfoPath = `./data/area/info/${account.homeAreaId}.json`;
   try {
     await fs.access(areaInfoPath);
-    console.log(`✅ Home area already exists for ${accountData.screenName}, skipping creation`);
-    return; // Exit early, skip creating area again
   } catch {
-    console.log(`🆕 Creating home area for ${accountData.screenName}`);
+    // Create default home area for this profile
+    const areaId = account.homeAreaId;
+    const areaName = `${account.screenName}'s home`;
+    const areaKey = `rr${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
+    
+    const bundleFolder = `./data/area/bundle/${areaId}`;
+    await fs.mkdir(bundleFolder, { recursive: true });
+    const bundlePath = `${bundleFolder}/${areaKey}.json`;
+    await fs.writeFile(bundlePath, JSON.stringify({ thingDefinitions: [], serveTime: 0 }, null, 2));
+    
+    const subareaPath = `./data/area/subareas/${areaId}.json`;
+    await fs.writeFile(subareaPath, JSON.stringify({ subareas: [] }, null, 2));
+
+    const areaInfo = {
+      editors: [{ id: account.personId, name: account.screenName, isOwner: true }],
+      listEditors: [],
+      copiedFromAreas: [],
+      name: areaName,
+      creationDate: new Date().toISOString(),
+      totalVisitors: 0,
+      isZeroGravity: false,
+      hasFloatingDust: false,
+      isCopyable: false,
+      isExcluded: false,
+      renameCount: 0,
+      copiedCount: 0,
+      isFavorited: false
+    };
+
+    const areaLoad = {
+      ok: true,
+      areaId,
+      areaName,
+      areaKey,
+      areaCreatorId: account.personId,
+      isPrivate: false,
+      isZeroGravity: false,
+      hasFloatingDust: false,
+      isCopyable: false,
+      onlyOwnerSetsLocks: false,
+      isExcluded: false,
+      environmentChangersJSON: JSON.stringify({ environmentChangers: [] }),
+      requestorIsEditor: true,
+      requestorIsListEditor: true,
+      requestorIsOwner: true,
+      placements: [
+        {
+          Id: crypto.randomUUID().replace(/-/g, "").slice(0, 24),
+          Tid: "000000000000000000000001",
+          P: { x: 0, y: -0.3, z: 0 },
+          R: { x: 0, y: 0, z: 0 }
+        }
+      ],
+      serveTime: 17
+    };
+
+    const areaBundle = { thingDefinitions: [], serveTime: 3 };
+
+    await fs.writeFile(`./data/area/info/${areaId}.json`, JSON.stringify(areaInfo, null, 2));
+    await fs.writeFile(`./data/area/load/${areaId}.json`, JSON.stringify(areaLoad, null, 2));
+    await fs.writeFile(`./data/area/bundle/${areaId}.json`, JSON.stringify(areaBundle, null, 2));
+
+    // Add to area list
+    await injectInitialAreaToList(areaId, areaName);
+    console.log(`🌍 [PROFILE] Created home area for ${account.screenName}`);
   }
-
-  // Create default home area
-  const areaId = accountData.homeAreaId;
-  const areaName = `${accountData.screenName}'s home`;
-  const areaKey = `rr${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
-  const bundleFolder = `./data/area/bundle/${areaId}`;
-  await fs.mkdir(bundleFolder, { recursive: true });
-  const bundlePath = `${bundleFolder}/${areaKey}.json`;
-  await fs.writeFile(bundlePath, JSON.stringify({ thingDefinitions: [], serveTime: 0 }, null, 2));
-  const subareaPath = `./data/area/subareas/${areaId}.json`;
-  await fs.writeFile(subareaPath, JSON.stringify({ subareas: [] }, null, 2));
-
-  const areaInfo = {
-    editors: [
-      {
-        id: accountData.personId,
-        name: accountData.screenName,
-        isOwner: true
-      }
-    ],
-    listEditors: [],
-    copiedFromAreas: [],
-    name: areaName,
-    creationDate: new Date().toISOString(),
-    totalVisitors: 0,
-    isZeroGravity: false,
-    hasFloatingDust: false,
-    isCopyable: false,
-    isExcluded: false,
-    renameCount: 0,
-    copiedCount: 0,
-    isFavorited: false
-  };
-
-  const areaLoad = {
-    ok: true,
-    areaId,
-    areaName,
-    areaKey,
-    areaCreatorId: accountData.personId,
-    isPrivate: false,
-    isZeroGravity: false,
-    hasFloatingDust: false,
-    isCopyable: false,
-    onlyOwnerSetsLocks: false,
-    isExcluded: false,
-    environmentChangersJSON: JSON.stringify({ environmentChangers: [] }),
-    requestorIsEditor: true,
-    requestorIsListEditor: true,
-    requestorIsOwner: true,
-    placements: [
-      {
-        Id: crypto.randomUUID().replace(/-/g, "").slice(0, 24),
-        Tid: "000000000000000000000001", // Ground object ID
-        P: { x: 0, y: -0.3, z: 0 },
-        R: { x: 0, y: 0, z: 0 }
-      }
-    ],
-    serveTime: 17
-  };
-
-  const areaBundle = {
-    thingDefinitions: [],
-    serveTime: 3
-  };
-
-  await fs.mkdir(`./data/area/info`, { recursive: true });
-  await fs.mkdir(`./data/area/load`, { recursive: true });
-  await fs.mkdir(`./data/area/bundle`, { recursive: true });
-
-  await fs.writeFile(`./data/area/info/${areaId}.json`, JSON.stringify(areaInfo, null, 2));
-  await fs.writeFile(`./data/area/load/${areaId}.json`, JSON.stringify(areaLoad, null, 2));
-  await fs.writeFile(`./data/area/bundle/${areaId}.json`, JSON.stringify(areaBundle, null, 2));
-
-  console.log(`🌍 Created default home area for ${accountData.screenName}`);
+  
+  return { accountData: account, isNew };
 }
 
-await initDefaults()
+await initServer()
 
 const areaIndex: { name: string, description?: string, id: string, playerCount: number }[] = [];
 const areaByUrlName = new Map<string, string>()
@@ -364,29 +571,7 @@ const findAreaByUrlName = (areaUrlName: string) => {
   return areaByUrlName.get(areaUrlName)
 }
 
-// ✅ Inject default home area into arealist.json if not already present
-try {
-  const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
-  const personId = account.personId;
-  const personName = account.screenName;
-  const defaultAreaId = account.homeAreaId;
-  const defaultAreaName = `${personName}'s home`;
-
-  const listPath = "./data/area/arealist.json";
-  let alreadyExists = false;
-
-  try {
-    const areaList = await Bun.file(listPath).json();
-    alreadyExists = areaList.created?.some((a: any) => a.id === defaultAreaId);
-  } catch { }
-
-  if (!alreadyExists) {
-    await injectInitialAreaToList(defaultAreaId, defaultAreaName);
-    console.log(`✅ Injected default area "${defaultAreaName}" into arealist.json`);
-  }
-} catch {
-  console.warn("⚠️ Could not inject default area: account.json missing or invalid.");
-}
+// Note: Home areas are created per-profile when clients connect via /auth/start
 
 
 const app = new Elysia()
@@ -411,27 +596,56 @@ const app = new Elysia()
 
   .post(
     "/auth/start",
-    async ({ cookie: { ast } }) => {
-      const account = JSON.parse(
-        await fs.readFile("./data/person/account.json", "utf-8")
-      )
-
-      ast.value = `s:${generateObjectId()}`
-      ast.httpOnly = true
+    async ({ cookie: { ast }, request, body }) => {
+      // Get profile name from: X-Profile header, ?profile= query, or request body
+      let profileName = request.headers.get("X-Profile");
+      if (!profileName) {
+        const url = new URL(request.url);
+        profileName = url.searchParams.get("profile");
+      }
+      if (!profileName && body && typeof body === 'object' && 'profile' in body) {
+        profileName = (body as any).profile;
+      }
+      
+      // If no profile specified, use default or generate random
+      if (!profileName) {
+        if (DEFAULT_PROFILE) {
+          profileName = DEFAULT_PROFILE;
+          console.log(`[AUTH] Using default profile: ${profileName}`);
+        } else {
+          profileName = generateRandomUsername();
+          console.log(`[AUTH] No profile specified, generated: ${profileName}`);
+        }
+      }
+      
+      // Setup/load the profile (creates if new)
+      const { accountData: account, isNew } = await setupClientProfile(profileName);
+      
+      // Create session for this client
+      const sessionToken = sessionManager.createSession(profileName, account);
+      ast.value = sessionToken;
+      ast.httpOnly = true;
+      
+      if (isNew) {
+        console.log(`[AUTH] 🆕 New player joined: ${profileName}`);
+      } else {
+        console.log(`[AUTH] 👋 Player connected: ${profileName}`);
+      }
+      
+      // Log active sessions
+      console.log(`[AUTH] Active players: ${sessionManager.getActiveCount()}`);
 
       // Extract hands from attachments for separate fields
       const attachmentsObj = typeof account.attachments === "string" 
         ? JSON.parse(account.attachments || "{}") 
         : (account.attachments ?? {});
       
-      console.log("[AUTH] Current attachments:", Object.keys(attachmentsObj).map(k => `${k}: ${attachmentsObj[k] ? 'has data' : 'empty'}`).join(', '));
+      console.log("[AUTH] Current attachments:", Object.keys(attachmentsObj).map((k: string) => `${k}: ${attachmentsObj[k] ? 'has data' : 'empty'}`).join(', '));
       
-      // Return attachments from account.json
+      // Return attachments from account file
       const attachmentsString = typeof account.attachments === "string"
         ? account.attachments
         : JSON.stringify(account.attachments ?? {});
-      
-      console.log("[AUTH] Attachments:", attachmentsString.substring(0, 200) + "...");
       
       // Build response object
       const authResponse: any = {
@@ -476,15 +690,70 @@ const app = new Elysia()
     {
       cookie: t.Object({
         ast: t.Optional(t.String())
-      })
+      }),
+      body: t.Optional(t.Object({
+        profile: t.Optional(t.String())
+      }))
     }
   )
-  .post("/person/updateattachment", async ({ body }) => {
+  // ============== MULTIPLAYER STATUS ENDPOINTS ==============
+  .get("/server/status", async () => {
+    const activeSessions = sessionManager.getActiveSessions();
+    const profiles = await listProfiles();
+    
+    return {
+      ok: true,
+      serverType: "multiplayer",
+      activePlayers: activeSessions.length,
+      players: activeSessions.map(s => ({
+        profileName: s.profileName,
+        screenName: s.screenName,
+        connectedAt: s.connectedAt
+      })),
+      totalProfiles: profiles.length,
+      availableProfiles: profiles
+    };
+  })
+  .get("/server/players", async () => {
+    const activeSessions = sessionManager.getActiveSessions();
+    return {
+      ok: true,
+      count: activeSessions.length,
+      players: activeSessions.map(s => ({
+        profileName: s.profileName,
+        personId: s.personId,
+        screenName: s.screenName,
+        connectedAt: s.connectedAt
+      }))
+    };
+  })
+  .get("/server/profiles", async () => {
+    const profiles = await listProfiles();
+    return {
+      ok: true,
+      count: profiles.length,
+      profiles
+    };
+  })
+  .post("/auth/disconnect", async ({ cookie }) => {
+    // Allow client to disconnect their session
+    if (cookie?.ast?.value) {
+      const session = sessionManager.getSession(cookie.ast.value);
+      if (session) {
+        sessionManager.removeSession(cookie.ast.value);
+        console.log(`[AUTH] 👋 Player disconnected: ${session.profileName}`);
+        return { ok: true, message: `Disconnected ${session.profileName}` };
+      }
+    }
+    return { ok: false, message: "No active session" };
+  })
+  // ============== END MULTIPLAYER STATUS ==============
+  .post("/person/updateattachment", async ({ body, cookie }) => {
     return await accountMutex.runExclusive(async () => {
       console.log("[ATTACHMENT] Received request:", JSON.stringify(body));
       const { id, data, attachments } = body as any;
 
-      const accountPath = "./data/person/account.json";
+      const accountPath = getAccountPath(cookie);
       let accountData: Record<string, any> = {};
       
       // Read account data
@@ -579,10 +848,10 @@ const app = new Elysia()
     });
   })
   // Set hand color for avatar
-  .post("/person/sethandcolor", async ({ body }) => {
+  .post("/person/sethandcolor", async ({ body, cookie }) => {
     console.log("[HAND COLOR] Received request:", body);
 
-    const accountPath = "./data/person/account.json";
+    const accountPath = getAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -666,15 +935,15 @@ const app = new Elysia()
     { body: t.Object({ areaId: t.String() }) }
   )
   .post("/area/save",
-    async ({ body }) => {
+    async ({ body, cookie }) => {
       const areaId = body.id || generateObjectId();
       const filePath = `./data/area/load/${areaId}.json`;
 
       await fs.mkdir("./data/area/load", { recursive: true });
-      // Align creator identity with account.json (same as /area route)
+      // Align creator identity with account (same as /area route)
       let creatorId = body.creatorId;
       try {
-        const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+        const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
         if (account?.personId) creatorId = account.personId;
       } catch { }
       const sanitizedBody = {
@@ -737,7 +1006,7 @@ const app = new Elysia()
     },
     { body: t.Object({ term: t.String(), byCreatorId: t.Optional(t.String()) }) }
   )
-  .post("/user/setName", async ({ body }) => {
+  .post("/user/setName", async ({ body, cookie }) => {
     const { newName } = body;
 
     if (!newName || typeof newName !== "string" || newName.length < 3) {
@@ -747,7 +1016,7 @@ const app = new Elysia()
       });
     }
 
-    const accountPath = "./data/person/account.json";
+    const accountPath = getAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -790,8 +1059,8 @@ const app = new Elysia()
       totalSearchablePublicAreas: canned_areaList.totalSearchablePublicAreas + dynamic.totalSearchablePublicAreas
     };
   })
-  .get("/repair-home-area", async () => {
-    const accountPath = "./data/person/account.json";
+  .get("/repair-home-area", async ({ cookie }) => {
+    const accountPath = getAccountPath(cookie);
     const areaBase = "./data/area";
 
     try {
@@ -840,23 +1109,23 @@ const app = new Elysia()
       return new Response("Server error during repair", { status: 500 });
     }
   })
-  .post("/area", async ({ body }) => {
+  .post("/area", async ({ body, cookie }) => {
     const areaName = body?.name;
     if (!areaName || typeof areaName !== "string") {
       return new Response("Missing area name", { status: 400 });
     }
 
-    // ✅ Load identity from account.json
+    // ✅ Load identity from account
     let personId: string;
     let personName: string;
 
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       personId = account.personId;
       personName = account.screenName;
 
       if (!personId || !personName) {
-        throw new Error("Missing personId or screenName in account.json");
+        throw new Error("Missing personId or screenName in account file");
       }
     } catch {
       return new Response("Could not load valid account identity", { status: 500 });
@@ -1002,8 +1271,8 @@ const app = new Elysia()
 
     await fs.writeFile(listPath, JSON.stringify(areaList, null, 2));
 
-    // ✅ Inject area into account.json under ownedAreas
-    const accountPath = "./data/person/account.json";
+    // ✅ Inject area into account file under ownedAreas
+    const accountPath = getAccountPath(cookie);
     try {
       const accountFile = Bun.file(accountPath);
       let accountData = await accountFile.json();
@@ -1012,7 +1281,7 @@ const app = new Elysia()
 
       await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
     } catch {
-      console.warn("⚠️ Could not update account.json with new owned area.");
+      console.warn("⚠️ Could not update account file with new owned area.");
     }
 
     return new Response(JSON.stringify({ id: areaId }), {
@@ -1105,15 +1374,15 @@ const app = new Elysia()
     app.routes.find(r => r.path === '/placement/info')!
       .handler({ body: { areaId, placementId } } as any)
   )
-  .post("/placement/new", async ({ body }) => {
+  .post("/placement/new", async ({ body, cookie }) => {
     const { areaId, placement } = body;
     const parsed = JSON.parse(decodeURIComponent(placement));
     const placementId = parsed.Id;
     const placementPath = `./data/placement/info/${areaId}/${placementId}.json`;
 
-    // Inject identity from account.json
+    // Inject identity from account file
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       parsed.placerId = account.personId || "unknown";
       parsed.placerName = account.screenName || "anonymous";
     } catch {
@@ -1183,14 +1452,14 @@ const app = new Elysia()
   .get("person/friendsbystr",
     () => canned_friendsbystr
   )
-  .post("/placement/save", async ({ body: { areaId, placementId, data } }) => {
+  .post("/placement/save", async ({ body: { areaId, placementId, data }, cookie }) => {
     if (!areaId || !placementId || !data) {
       console.error("Missing required placement fields");
       return { ok: false, error: "Invalid placement data" };
     }
 
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       data.placerId = account.personId || "unknown";
       data.placerName = account.screenName || "anonymous";
     } catch {
@@ -1248,14 +1517,14 @@ const app = new Elysia()
       placementId: t.String()
     })
   })
-  .post("/placement/update", async ({ body }) => {
+  .post("/placement/update", async ({ body, cookie }) => {
     const { areaId, placement } = body;
     const parsed = JSON.parse(decodeURIComponent(placement));
     const placementId = parsed.Id;
     const placementPath = `./data/placement/info/${areaId}/${placementId}.json`;
 
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       parsed.placerId = account.personId || "unknown";
       parsed.placerName = account.screenName || "anonymous";
     } catch {
@@ -1289,7 +1558,7 @@ const app = new Elysia()
       placement: t.String()
     })
   })
-  .post("/placement/duplicate", async ({ body }) => {
+  .post("/placement/duplicate", async ({ body, cookie }) => {
     const { areaId, placements } = body;
 
     const areaFilePath = `./data/area/load/${areaId}.json`;
@@ -1305,7 +1574,7 @@ const app = new Elysia()
     let personId = "unknown";
     let screenName = "anonymous";
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       personId = account.personId || personId;
       screenName = account.screenName || screenName;
     } catch { }
@@ -1514,14 +1783,14 @@ const app = new Elysia()
       isFindable: t.Optional(t.Boolean())
     })
   })
-  .get("/inventory/:page", async ({ params }) => {
+  .get("/inventory/:page", async ({ params, cookie }) => {
     const pageParam = params?.page;
     const page = Math.max(0, parseInt(String(pageParam), 10) || 0);
 
-    // Load current user id from account.json
+    // Load current user id from account file
     let personId = "unknown";
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       personId = account.personId || personId;
     } catch {}
 
@@ -1535,10 +1804,10 @@ const app = new Elysia()
       }
     } catch {}
 
-    // Prefer inventory stored in account.json
+    // Prefer inventory stored in account file
     let usedPaged = false;
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       const inv = account?.inventory;
       if (inv && inv.pages && typeof inv.pages === "object") {
         const pageItems = inv.pages[String(page)];
@@ -1561,7 +1830,7 @@ const app = new Elysia()
       headers: { "Content-Type": "application/json" }
     });
   })
-  .post("/inventory/save", async ({ body }) => {
+  .post("/inventory/save", async ({ body, cookie }) => {
     // Accept one of:
     // - { ids: [...] }
     // - { id: "..." }
@@ -1570,12 +1839,12 @@ const app = new Elysia()
 
     let personId = "unknown";
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       personId = account.personId || personId;
     } catch {}
 
-    // Load account.json and embed inventory there
-    const accountPath = "./data/person/account.json";
+    // Load account file and embed inventory there
+    const accountPath = getAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1626,7 +1895,7 @@ const app = new Elysia()
     body: t.Unknown(),
     type: "form"
   })
-  .post("/inventory/delete", async ({ body }) => {
+  .post("/inventory/delete", async ({ body, cookie }) => {
     // Delete item from inventory: { page: number|string, thingId: string }
     const { page, thingId } = body as any;
 
@@ -1639,11 +1908,11 @@ const app = new Elysia()
 
     let personId = "unknown";
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       personId = account.personId || personId;
     } catch {}
 
-    const accountPath = "./data/person/account.json";
+    const accountPath = getAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1695,7 +1964,7 @@ const app = new Elysia()
     }),
     type: "form"
   })
-  .post("/inventory/move", async ({ body }) => {
+  .post("/inventory/move", async ({ body, cookie }) => {
     // Move item within inventory: { fromPage: number|string, fromIndex: number, toPage: number|string, toIndex: number }
     const { fromPage, fromIndex, toPage, toIndex } = body as any;
 
@@ -1708,11 +1977,11 @@ const app = new Elysia()
 
     let personId = "unknown";
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       personId = account.personId || personId;
     } catch {}
 
-    const accountPath = "./data/person/account.json";
+    const accountPath = getAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1761,17 +2030,17 @@ const app = new Elysia()
     }),
     type: "form"
   })
-  .post("/inventory/update", async ({ body }) => {
+  .post("/inventory/update", async ({ body, cookie }) => {
     // Mirror /inventory/save behavior; some clients call update
     const invUpdate = body as any;
 
     let personId = "unknown";
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       personId = account.personId || personId;
     } catch {}
 
-    const accountPath = "./data/person/account.json";
+    const accountPath = getAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1855,22 +2124,22 @@ const app = new Elysia()
     body: t.Unknown(),
     type: "form"
   })
-  .post("/thing", async ({ body }) => {
+  .post("/thing", async ({ body, cookie }) => {
     const { name = "" } = body;
     const thingId = generateObjectId();
     const infoPath = `./data/thing/info/${thingId}.json`;
     const defPath = `./data/thing/def/${thingId}.json`;
     const tagsPath = `./data/thing/tags/${thingId}.json`;
 
-    // ✅ Load identity from account.json
+    // ✅ Load identity from account
     let creatorId = "unknown";
     let creatorName = "anonymous";
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
       creatorId = account.personId || creatorId;
       creatorName = account.screenName || creatorName;
     } catch (e) {
-      console.warn("⚠️ Could not load account.json for object metadata.", e);
+      console.warn("⚠️ Could not load account for object metadata.", e);
     }
 
     // ✅ Build thinginfo object
@@ -2369,9 +2638,9 @@ const app = new Elysia()
       updates: t.Record(t.String(), t.Any())
     })
   })
-  .post("/thing/topby", async () => {
+  .post("/thing/topby", async ({ cookie }) => {
     // Return top things created by the current user
-    const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+    const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
     const personId = account.personId;
     const file = Bun.file(`./data/person/topby/${personId}.json`);
 
