@@ -617,7 +617,6 @@ const app = new Elysia()
 <html>
 <head>
   <title>Echoland Admin - Profile Assignment</title>
-  <meta http-equiv="refresh" content="3">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -687,11 +686,11 @@ const app = new Elysia()
 </head>
 <body>
   <div class="container">
-    <h1>🎮 Echoland Admin</h1>
+    <h1>Echoland Admin</h1>
     <p class="subtitle">Profile Assignment Panel</p>
     
     <div class="card pending">
-      <h2>⏳ Waiting Clients (${pendingClients.length})</h2>
+      <h2>Waiting Clients (${pendingClients.length})</h2>
       ${pendingClients.length > 0 ? pendingClients.map(c => `
         <div class="client-item">
           <div class="client-info">
@@ -713,7 +712,7 @@ const app = new Elysia()
     </div>
     
     <div class="card">
-      <h2>🟢 Online Players (${activeSessions.length})</h2>
+      <h2>Online Players (${activeSessions.length})</h2>
       ${activeSessions.length > 0 ? `
         <div class="online-list">
           ${activeSessions.map(s => `
@@ -727,7 +726,7 @@ const app = new Elysia()
     </div>
     
     <div class="card">
-      <h2>📋 Available Profiles (${profiles.length})</h2>
+      <h2>Available Profiles (${profiles.length})</h2>
       ${profiles.length > 0 ? `
         <div class="profile-list">
           ${profiles.map(p => `<span class="profile-tag">${p}</span>`).join('')}
@@ -739,7 +738,7 @@ const app = new Elysia()
       </form>
     </div>
     
-    <p class="refresh-note">Page auto-refreshes every 3 seconds</p>
+    <p class="refresh-note">Refresh the page to see updates</p>
   </div>
 </body>
 </html>`;
