@@ -126,6 +126,40 @@ async function getAccountFromSession(cookie?: any): Promise<{ account: Record<st
   return { account: null, profileName: null, session: null };
 }
 
+// Safe helper to get account data - returns account data or throws a helpful error
+async function requireAccount(cookie?: any): Promise<{ account: Record<string, any>; profileName: string; session: SessionData; accountPath: string }> {
+  const result = await getAccountFromSession(cookie);
+  if (!result.account || !result.profileName || !result.session) {
+    throw new Error("No valid session - client must authenticate first via /auth/start");
+  }
+  return {
+    account: result.account,
+    profileName: result.profileName,
+    session: result.session,
+    accountPath: getAccountPathForProfile(result.profileName)
+  };
+}
+
+// Safe helper to get account data with fallback (won't throw)
+async function getAccountSafe(cookie?: any): Promise<{ personId: string; screenName: string; accountPath: string | null; profileName: string | null }> {
+  try {
+    const result = await requireAccount(cookie);
+    return {
+      personId: result.account.personId,
+      screenName: result.account.screenName,
+      accountPath: result.accountPath,
+      profileName: result.profileName
+    };
+  } catch {
+    return {
+      personId: "unknown",
+      screenName: "anonymous",
+      accountPath: null,
+      profileName: null
+    };
+  }
+}
+
 // Load account data for a profile
 async function loadAccountData(profileName: string): Promise<Record<string, any> | null> {
   try {
@@ -991,20 +1025,17 @@ const app = new Elysia()
       console.log("[ATTACHMENT] Received request:", JSON.stringify(body));
       const { id, data, attachments } = body as any;
 
-      const accountPath = getAccountPath(cookie);
-      let accountData: Record<string, any> = {};
-      
-      // Read account data
-      try {
-        const fileContent = await fs.readFile(accountPath, "utf-8");
-        accountData = JSON.parse(fileContent);
-      } catch (e) {
-        console.error("[ATTACHMENT] Failed to read account:", e);
-        return new Response(JSON.stringify({ ok: false, error: "Account read failed" }), {
+      // Get account from session
+      const sessionResult = await getAccountFromSession(cookie);
+      if (!sessionResult.account || !sessionResult.profileName) {
+        console.error("[ATTACHMENT] No valid session");
+        return new Response(JSON.stringify({ ok: false, error: "Account read failed - no session" }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
         });
       }
+      const accountPath = getAccountPathForProfile(sessionResult.profileName);
+      let accountData = sessionResult.account;
 
       // Ensure attachments object exists in account
       let currentAttachments: Record<string, any> = {};
@@ -1089,17 +1120,17 @@ const app = new Elysia()
   .post("/person/sethandcolor", async ({ body, cookie }) => {
     console.log("[HAND COLOR] Received request:", body);
 
-    const accountPath = getAccountPath(cookie);
-    let accountData: Record<string, any> = {};
-    try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-    } catch (e) {
-      console.error("[HAND COLOR] Failed to read account:", e);
+    // Get account from session
+    const sessionResult = await getAccountFromSession(cookie);
+    if (!sessionResult.account || !sessionResult.profileName) {
+      console.error("[HAND COLOR] Failed to read account - no session");
       return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
+    const accountPath = getAccountPathForProfile(sessionResult.profileName);
+    let accountData = sessionResult.account;
 
     // Store the hand color data
     const { r, g, b } = body as any;
@@ -1178,12 +1209,9 @@ const app = new Elysia()
       const filePath = `./data/area/load/${areaId}.json`;
 
       await fs.mkdir("./data/area/load", { recursive: true });
-      // Align creator identity with account (same as /area route)
-      let creatorId = body.creatorId;
-      try {
-        const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-        if (account?.personId) creatorId = account.personId;
-      } catch { }
+      // Align creator identity with session account
+      const accountInfo = await getAccountSafe(cookie);
+      const creatorId = accountInfo.personId !== "unknown" ? accountInfo.personId : body.creatorId;
       const sanitizedBody = {
         ...body,
         creatorId
@@ -1254,16 +1282,16 @@ const app = new Elysia()
       });
     }
 
-    const accountPath = getAccountPath(cookie);
-    let accountData: Record<string, any> = {};
-    try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-    } catch {
+    // Get account from session
+    const sessionResult = await getAccountFromSession(cookie);
+    if (!sessionResult.account || !sessionResult.profileName) {
       return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
+    const accountPath = getAccountPathForProfile(sessionResult.profileName);
+    let accountData = sessionResult.account;
 
     accountData.screenName = newName;
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
@@ -1298,11 +1326,15 @@ const app = new Elysia()
     };
   })
   .get("/repair-home-area", async ({ cookie }) => {
-    const accountPath = getAccountPath(cookie);
     const areaBase = "./data/area";
 
     try {
-      const account = JSON.parse(await fs.readFile(accountPath, "utf-8"));
+      // Get account from session
+      const sessionResult = await getAccountFromSession(cookie);
+      if (!sessionResult.account) {
+        return new Response("Account not found - please reconnect", { status: 400 });
+      }
+      const account = sessionResult.account;
       const homeId = account.homeAreaId;
       if (!homeId) return new Response("No homeAreaId found", { status: 400 });
 
@@ -1353,20 +1385,13 @@ const app = new Elysia()
       return new Response("Missing area name", { status: 400 });
     }
 
-    // ✅ Load identity from account
-    let personId: string;
-    let personName: string;
-
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      personId = account.personId;
-      personName = account.screenName;
-
-      if (!personId || !personName) {
-        throw new Error("Missing personId or screenName in account file");
-      }
-    } catch {
-      return new Response("Could not load valid account identity", { status: 500 });
+    // Load identity from session account
+    const accountInfo = await getAccountSafe(cookie);
+    const personId = accountInfo.personId;
+    const personName = accountInfo.screenName;
+    
+    if (personId === "unknown") {
+      return new Response("Could not load valid account identity - please reconnect", { status: 500 });
     }
 
     const generateId = () => crypto.randomUUID().replace(/-/g, "").slice(0, 24);
@@ -1509,17 +1534,17 @@ const app = new Elysia()
 
     await fs.writeFile(listPath, JSON.stringify(areaList, null, 2));
 
-    // ✅ Inject area into account file under ownedAreas
-    const accountPath = getAccountPath(cookie);
-    try {
-      const accountFile = Bun.file(accountPath);
-      let accountData = await accountFile.json();
-
-      accountData.ownedAreas = [...new Set([...(accountData.ownedAreas ?? []), areaId])];
-
-      await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
-    } catch {
-      console.warn("⚠️ Could not update account file with new owned area.");
+    // Inject area into account file under ownedAreas
+    if (accountInfo.accountPath && accountInfo.profileName) {
+      try {
+        const accountData = await loadAccountData(accountInfo.profileName);
+        if (accountData) {
+          accountData.ownedAreas = [...new Set([...(accountData.ownedAreas ?? []), areaId])];
+          await saveAccountData(accountInfo.profileName, accountData);
+        }
+      } catch {
+        console.warn("Could not update account file with new owned area.");
+      }
     }
 
     return new Response(JSON.stringify({ id: areaId }), {
@@ -1618,15 +1643,10 @@ const app = new Elysia()
     const placementId = parsed.Id;
     const placementPath = `./data/placement/info/${areaId}/${placementId}.json`;
 
-    // Inject identity from account file
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      parsed.placerId = account.personId || "unknown";
-      parsed.placerName = account.screenName || "anonymous";
-    } catch {
-      parsed.placerId = "unknown";
-      parsed.placerName = "anonymous";
-    }
+    // Inject identity from session account
+    const accountInfo = await getAccountSafe(cookie);
+    parsed.placerId = accountInfo.personId;
+    parsed.placerName = accountInfo.screenName;
 
     parsed.placedDaysAgo = 0;
 
@@ -1696,14 +1716,9 @@ const app = new Elysia()
       return { ok: false, error: "Invalid placement data" };
     }
 
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      data.placerId = account.personId || "unknown";
-      data.placerName = account.screenName || "anonymous";
-    } catch {
-      data.placerId = "unknown";
-      data.placerName = "anonymous";
-    }
+    const accountInfo = await getAccountSafe(cookie);
+    data.placerId = accountInfo.personId;
+    data.placerName = accountInfo.screenName;
 
     const dirPath = path.resolve("./data/placement/info/", areaId);
     await fs.mkdir(dirPath, { recursive: true });
@@ -1761,14 +1776,9 @@ const app = new Elysia()
     const placementId = parsed.Id;
     const placementPath = `./data/placement/info/${areaId}/${placementId}.json`;
 
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      parsed.placerId = account.personId || "unknown";
-      parsed.placerName = account.screenName || "anonymous";
-    } catch {
-      parsed.placerId = "unknown";
-      parsed.placerName = "anonymous";
-    }
+    const accountInfo = await getAccountSafe(cookie);
+    parsed.placerId = accountInfo.personId;
+    parsed.placerName = accountInfo.screenName;
 
     await Bun.write(placementPath, JSON.stringify(parsed, null, 2));
 
@@ -1809,13 +1819,9 @@ const app = new Elysia()
 
     if (!Array.isArray(areaData.placements)) areaData.placements = [];
 
-    let personId = "unknown";
-    let screenName = "anonymous";
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      personId = account.personId || personId;
-      screenName = account.screenName || screenName;
-    } catch { }
+    const accountInfo = await getAccountSafe(cookie);
+    const personId = accountInfo.personId;
+    const screenName = accountInfo.screenName;
 
     const newPlacements = placements.map((encoded: string) => {
       const parsed = JSON.parse(decodeURIComponent(encoded));
@@ -2025,12 +2031,9 @@ const app = new Elysia()
     const pageParam = params?.page;
     const page = Math.max(0, parseInt(String(pageParam), 10) || 0);
 
-    // Load current user id from account file
-    let personId = "unknown";
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      personId = account.personId || personId;
-    } catch {}
+    // Load current user from session
+    const { account, profileName } = await getAccountFromSession(cookie);
+    const personId = account?.personId || "unknown";
 
     const invPath = `./data/person/inventory/${personId}.json`;
     let items: string[] = [];
@@ -2044,17 +2047,16 @@ const app = new Elysia()
 
     // Prefer inventory stored in account file
     let usedPaged = false;
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      const inv = account?.inventory;
-      if (inv && inv.pages && typeof inv.pages === "object") {
+    if (account?.inventory) {
+      const inv = account.inventory;
+      if (inv.pages && typeof inv.pages === "object") {
         const pageItems = inv.pages[String(page)];
         if (Array.isArray(pageItems)) {
           items = pageItems;
           usedPaged = true;
         }
       }
-    } catch {}
+    }
 
     // If using paged store, items already represent this page; otherwise paginate flat list
     const pageSize = 20;
@@ -2075,23 +2077,17 @@ const app = new Elysia()
     // - { page: number|string, inventoryItem: string }  // from client logs
     const invUpdate = body as any;
 
-    let personId = "unknown";
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      personId = account.personId || personId;
-    } catch {}
-
-    // Load account file and embed inventory there
-    const accountPath = getAccountPath(cookie);
-    let accountData: Record<string, any> = {};
-    try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-    } catch {
-      return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
+    // Get account from session
+    const sessionResult = await getAccountFromSession(cookie);
+    if (!sessionResult.account || !sessionResult.profileName) {
+      return new Response(JSON.stringify({ ok: false, error: "Account not found - please reconnect" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
+    const personId = sessionResult.account.personId || "unknown";
+    const accountPath = getAccountPathForProfile(sessionResult.profileName);
+    let accountData = sessionResult.account;
 
     let current: { ids?: string[]; pages?: Record<string, any[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2144,22 +2140,17 @@ const app = new Elysia()
       });
     }
 
-    let personId = "unknown";
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      personId = account.personId || personId;
-    } catch {}
-
-    const accountPath = getAccountPath(cookie);
-    let accountData: Record<string, any> = {};
-    try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-    } catch {
-      return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
+    // Get account from session
+    const sessionResult = await getAccountFromSession(cookie);
+    if (!sessionResult.account || !sessionResult.profileName) {
+      return new Response(JSON.stringify({ ok: false, error: "Account not found - please reconnect" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
+    const personId = sessionResult.account.personId || "unknown";
+    const accountPath = getAccountPathForProfile(sessionResult.profileName);
+    let accountData = sessionResult.account;
 
     let current: { ids?: string[]; pages?: Record<string, any[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2213,22 +2204,17 @@ const app = new Elysia()
       });
     }
 
-    let personId = "unknown";
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      personId = account.personId || personId;
-    } catch {}
-
-    const accountPath = getAccountPath(cookie);
-    let accountData: Record<string, any> = {};
-    try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-    } catch {
-      return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
+    // Get account from session
+    const sessionResult = await getAccountFromSession(cookie);
+    if (!sessionResult.account || !sessionResult.profileName) {
+      return new Response(JSON.stringify({ ok: false, error: "Account not found - please reconnect" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
+    const personId = sessionResult.account.personId || "unknown";
+    const accountPath = getAccountPathForProfile(sessionResult.profileName);
+    let accountData = sessionResult.account;
 
     let current: { ids?: string[]; pages?: Record<string, any[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2272,22 +2258,17 @@ const app = new Elysia()
     // Mirror /inventory/save behavior; some clients call update
     const invUpdate = body as any;
 
-    let personId = "unknown";
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      personId = account.personId || personId;
-    } catch {}
-
-    const accountPath = getAccountPath(cookie);
-    let accountData: Record<string, any> = {};
-    try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-    } catch {
-      return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
+    // Get account from session
+    const sessionResult = await getAccountFromSession(cookie);
+    if (!sessionResult.account || !sessionResult.profileName) {
+      return new Response(JSON.stringify({ ok: false, error: "Account not found - please reconnect" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
+    const personId = sessionResult.account.personId || "unknown";
+    const accountPath = getAccountPathForProfile(sessionResult.profileName);
+    let accountData = sessionResult.account;
 
     let current: { ids?: string[]; pages?: Record<string, string[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2369,18 +2350,12 @@ const app = new Elysia()
     const defPath = `./data/thing/def/${thingId}.json`;
     const tagsPath = `./data/thing/tags/${thingId}.json`;
 
-    // ✅ Load identity from account
-    let creatorId = "unknown";
-    let creatorName = "anonymous";
-    try {
-      const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-      creatorId = account.personId || creatorId;
-      creatorName = account.screenName || creatorName;
-    } catch (e) {
-      console.warn("⚠️ Could not load account for object metadata.", e);
-    }
+    // Load identity from session account
+    const accountInfo = await getAccountSafe(cookie);
+    const creatorId = accountInfo.personId;
+    const creatorName = accountInfo.screenName;
 
-    // ✅ Build thinginfo object
+    // Build thinginfo object
     const thingInfo = {
       id: thingId,
       name,
@@ -2878,8 +2853,16 @@ const app = new Elysia()
   })
   .post("/thing/topby", async ({ cookie }) => {
     // Return top things created by the current user
-    const account = JSON.parse(await fs.readFile(getAccountPath(cookie), "utf-8"));
-    const personId = account.personId;
+    const accountInfo = await getAccountSafe(cookie);
+    const personId = accountInfo.personId;
+    
+    if (personId === "unknown") {
+      return new Response(JSON.stringify({ ids: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
     const file = Bun.file(`./data/person/topby/${personId}.json`);
 
     if (await file.exists()) {
