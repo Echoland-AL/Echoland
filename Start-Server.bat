@@ -2,6 +2,27 @@
 title Echoland Multiplayer Server
 color 0A
 
+:: Find bun executable
+set "BUN_CMD=bun"
+where bun >nul 2>nul
+if %errorlevel% neq 0 (
+    :: Check common install location
+    if exist "%USERPROFILE%\.bun\bin\bun.exe" (
+        set "BUN_CMD=%USERPROFILE%\.bun\bin\bun.exe"
+    ) else (
+        echo.
+        echo  ERROR: Bun is not installed or not in PATH!
+        echo.
+        echo  Install Bun by running this in PowerShell:
+        echo    irm bun.sh/install.ps1 ^| iex
+        echo.
+        echo  Or download from: https://bun.sh
+        echo.
+        pause
+        exit /b 1
+    )
+)
+
 echo.
 echo  ============================================
 echo     ECHOLAND MULTIPLAYER SERVER
@@ -35,13 +56,13 @@ echo.
 echo Starting multiplayer server...
 echo Players connect with X-Profile header or ?profile= param
 echo.
-bun game-server.ts
+"%BUN_CMD%" game-server.ts
 pause
 goto menu
 
 :list_profiles
 echo.
-bun create-profile.ts --list
+"%BUN_CMD%" create-profile.ts --list
 echo.
 pause
 goto menu
@@ -50,9 +71,9 @@ goto menu
 echo.
 set /p pname=Enter profile name (or press Enter for random): 
 if "%pname%"=="" (
-    bun create-profile.ts
+    "%BUN_CMD%" create-profile.ts
 ) else (
-    bun create-profile.ts %pname%
+    "%BUN_CMD%" create-profile.ts %pname%
 )
 echo.
 pause
@@ -61,16 +82,16 @@ goto menu
 :start_with_profile
 echo.
 echo Existing profiles:
-bun create-profile.ts --list
+"%BUN_CMD%" create-profile.ts --list
 echo.
 set /p testprofile=Enter profile name to use as default (for testing): 
 if "%testprofile%"=="" (
     echo No profile specified, starting without default.
-    bun game-server.ts
+    "%BUN_CMD%" game-server.ts
 ) else (
     echo Starting server with default profile: %testprofile%
     set DEFAULT_PROFILE=%testprofile%
-    bun game-server.ts
+    "%BUN_CMD%" game-server.ts
 )
 pause
 goto menu
