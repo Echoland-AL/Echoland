@@ -37,11 +37,20 @@ goto menu
 :start_server
 echo.
 echo Starting multiplayer server with Docker...
-echo Players connect with X-Profile header or ?profile= param
 echo.
 docker-compose up -d
 echo.
-echo Server started! Check logs with option 6.
+echo  ============================================
+echo   SERVER STARTED!
+echo  ============================================
+echo.
+echo   To select your profile, open in browser:
+echo   http://localhost:8000/profile
+echo.
+echo   Then launch your Anyland client!
+echo.
+echo   Check logs with option 6.
+echo  ============================================
 echo.
 pause
 goto menu

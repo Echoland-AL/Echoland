@@ -81,6 +81,25 @@ class SessionManager {
 
 const sessionManager = new SessionManager();
 
+// IP-to-Profile mapping for clients that can't send custom headers
+// Players visit /profile in browser to select their profile, then launch the game client
+const ipToProfile = new Map<string, string>();
+
+// Get client IP from request (handles proxies)
+function getClientIP(request: Request): string {
+  // Check for forwarded headers (when behind proxy/Docker)
+  const forwarded = request.headers.get('X-Forwarded-For');
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  const realIP = request.headers.get('X-Real-IP');
+  if (realIP) {
+    return realIP;
+  }
+  // Fallback - try to get from URL or return unknown
+  return 'unknown';
+}
+
 // Get account path for a specific profile
 function getAccountPathForProfile(profileName: string): string {
   return `${ACCOUNTS_DIR}/${profileName}.json`;
@@ -593,11 +612,304 @@ const app = new Elysia()
     console.log(request.method, path, { body, params })
   })
 
+  // ============== PROFILE SELECTION PAGE ==============
+  // Players visit this page in their browser to select a profile
+  // Their IP gets mapped to the profile, so when the game client connects from the same IP, it uses that profile
+  .get("/profile", async ({ request }) => {
+    const clientIP = getClientIP(request);
+    const currentProfile = ipToProfile.get(clientIP);
+    const profiles = await listProfiles();
+    const activeSessions = sessionManager.getActiveSessions();
+    
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Echoland - Profile Selection</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      color: #e8e8e8;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    h1 {
+      text-align: center;
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .subtitle {
+      text-align: center;
+      color: #888;
+      margin-bottom: 30px;
+    }
+    .card {
+      background: rgba(255,255,255,0.05);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .card h2 {
+      font-size: 1.2em;
+      margin-bottom: 16px;
+      color: #00d4ff;
+    }
+    .current-profile {
+      background: rgba(0, 212, 255, 0.1);
+      border-color: rgba(0, 212, 255, 0.3);
+    }
+    .current-profile .status {
+      display: inline-block;
+      background: #00d4ff;
+      color: #000;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85em;
+      font-weight: 600;
+    }
+    .profile-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .profile-btn {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: #e8e8e8;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    .profile-btn:hover {
+      background: rgba(0, 212, 255, 0.2);
+      border-color: #00d4ff;
+    }
+    .profile-btn.active {
+      background: rgba(0, 212, 255, 0.3);
+      border-color: #00d4ff;
+    }
+    .create-form {
+      display: flex;
+      gap: 10px;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(0,0,0,0.3);
+      color: #fff;
+      font-size: 1em;
+    }
+    input[type="text"]::placeholder { color: #666; }
+    button {
+      padding: 12px 24px;
+      border-radius: 8px;
+      border: none;
+      background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(0, 212, 255, 0.4);
+    }
+    .online-players {
+      margin-top: 30px;
+    }
+    .player-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .player-dot {
+      width: 8px;
+      height: 8px;
+      background: #00ff88;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #00ff88;
+    }
+    .instructions {
+      background: rgba(123, 44, 191, 0.1);
+      border-color: rgba(123, 44, 191, 0.3);
+    }
+    .instructions ol {
+      padding-left: 20px;
+      line-height: 1.8;
+    }
+    .ip-info {
+      font-size: 0.85em;
+      color: #666;
+      text-align: center;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🌍 Echoland</h1>
+    <p class="subtitle">Multiplayer Profile Selection</p>
+    
+    <div class="card current-profile">
+      <h2>Your Current Profile</h2>
+      ${currentProfile 
+        ? `<p><span class="status">✓ Selected</span> <strong>${currentProfile}</strong></p>
+           <p style="margin-top:10px;color:#888;">Launch your Anyland client - you'll connect as this profile!</p>`
+        : `<p style="color:#ff6b6b;">No profile selected yet. Choose one below!</p>`
+      }
+    </div>
+
+    <div class="card">
+      <h2>📋 Select Existing Profile</h2>
+      <div class="profile-list">
+        ${profiles.length > 0 
+          ? profiles.map(p => `
+              <a href="/profile/select?name=${encodeURIComponent(p)}" class="profile-btn ${p === currentProfile ? 'active' : ''}">
+                <span>${p}</span>
+                ${p === currentProfile ? '<span>✓</span>' : ''}
+              </a>
+            `).join('')
+          : '<p style="color:#888;">No profiles yet. Create one below!</p>'
+        }
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>✨ Create New Profile</h2>
+      <form action="/profile/create" method="GET" class="create-form">
+        <input type="text" name="name" placeholder="Enter profile name (or leave empty for random)" />
+        <button type="submit">Create</button>
+      </form>
+    </div>
+
+    <div class="card instructions">
+      <h2>📖 How to Play</h2>
+      <ol>
+        <li><strong>Select or create</strong> a profile above</li>
+        <li><strong>Launch Anyland</strong> on this computer</li>
+        <li>You'll automatically connect as your selected profile!</li>
+        <li>Other players on different computers do the same</li>
+      </ol>
+    </div>
+
+    ${activeSessions.length > 0 ? `
+      <div class="card online-players">
+        <h2>🟢 Online Players (${activeSessions.length})</h2>
+        ${activeSessions.map(s => `
+          <div class="player-item">
+            <span class="player-dot"></span>
+            <span>${s.screenName}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+
+    <p class="ip-info">Your IP: ${clientIP}</p>
+  </div>
+</body>
+</html>`;
+    
+    return new Response(html, {
+      headers: { "Content-Type": "text/html" }
+    });
+  })
+
+  // Select a profile for this IP
+  .get("/profile/select", async ({ request, query }) => {
+    const clientIP = getClientIP(request);
+    const profileName = query.name;
+    
+    if (!profileName) {
+      return Response.redirect("/profile", 302);
+    }
+    
+    // Check if profile exists
+    const profiles = await listProfiles();
+    if (!profiles.includes(profileName)) {
+      return new Response(`Profile "${profileName}" not found`, { status: 404 });
+    }
+    
+    // Map this IP to the profile
+    ipToProfile.set(clientIP, profileName);
+    console.log(`🎮 [PROFILE] IP ${clientIP} mapped to profile "${profileName}"`);
+    
+    return Response.redirect("/profile", 302);
+  })
+
+  // Create a new profile and select it
+  .get("/profile/create", async ({ request, query }) => {
+    const clientIP = getClientIP(request);
+    let profileName = query.name?.trim();
+    
+    if (!profileName) {
+      profileName = generateRandomUsername();
+    }
+    
+    // Check if profile already exists
+    const profiles = await listProfiles();
+    if (profiles.includes(profileName)) {
+      // Just select it instead of error
+      ipToProfile.set(clientIP, profileName);
+      return Response.redirect("/profile", 302);
+    }
+    
+    // Create the profile
+    await createNewProfile(profileName);
+    
+    // Map this IP to the profile
+    ipToProfile.set(clientIP, profileName);
+    console.log(`🎮 [PROFILE] Created and selected profile "${profileName}" for IP ${clientIP}`);
+    
+    return Response.redirect("/profile", 302);
+  })
+
+  // API to list profiles (for tools/scripts)
+  .get("/api/profiles", async () => {
+    const profiles = await listProfiles();
+    const activeSessions = sessionManager.getActiveSessions();
+    return {
+      profiles,
+      activePlayers: activeSessions.map(s => ({
+        name: s.screenName,
+        profile: s.profileName,
+        connectedAt: s.connectedAt
+      })),
+      ipMappings: Object.fromEntries(ipToProfile)
+    };
+  })
 
   .post(
     "/auth/start",
     async ({ cookie: { ast }, request, body }) => {
-      // Get profile name from: X-Profile header, ?profile= query, or request body
+      const clientIP = getClientIP(request);
+      
+      // Get profile name from multiple sources (in priority order):
+      // 1. X-Profile header
+      // 2. ?profile= query param
+      // 3. request body
+      // 4. IP-to-profile mapping (set via /profile page)
+      // 5. DEFAULT_PROFILE env var
+      // 6. Generate random
+      
       let profileName = request.headers.get("X-Profile");
       if (!profileName) {
         const url = new URL(request.url);
@@ -607,14 +919,25 @@ const app = new Elysia()
         profileName = (body as any).profile;
       }
       
-      // If no profile specified, use default or generate random
+      // Check IP-to-profile mapping (from /profile selection page)
+      if (!profileName) {
+        const mappedProfile = ipToProfile.get(clientIP);
+        if (mappedProfile) {
+          profileName = mappedProfile;
+          console.log(`[AUTH] Using IP-mapped profile for ${clientIP}: ${profileName}`);
+        }
+      }
+      
+      // If still no profile specified, use default or generate random
       if (!profileName) {
         if (DEFAULT_PROFILE) {
           profileName = DEFAULT_PROFILE;
           console.log(`[AUTH] Using default profile: ${profileName}`);
         } else {
           profileName = generateRandomUsername();
-          console.log(`[AUTH] No profile specified, generated: ${profileName}`);
+          console.log(`[AUTH] No profile specified for ${clientIP}, generated: ${profileName}`);
+          // Auto-map this IP to the generated profile so reconnects use the same one
+          ipToProfile.set(clientIP, profileName);
         }
       }
       
