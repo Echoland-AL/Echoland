@@ -14,11 +14,13 @@
   "author": "GAMEDRIX",
   "license": "AGPLv3.0",
   "dependencies": {
-    "elysia": "^0.8.6",
+    "@sinclair/typebox": "^0.34.41",
+    "elysia": "^1.4.8",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "bun-types": "1.2.23",
+    "typescript": "5.9.2"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
