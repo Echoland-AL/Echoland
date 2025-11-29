@@ -114,50 +114,65 @@ function getAccountPath(cookie?: any): string {
   return `${ACCOUNTS_DIR}/_default.json`;
 }
 
-// Get account data from session
-async function getAccountFromSession(cookie?: any): Promise<{ account: Record<string, any> | null; profileName: string | null; session: SessionData | null }> {
+// Get profile name from cookie (simpler than session management)
+function getProfileFromCookie(cookie?: any): string | null {
+  // Check for profile cookie (set by /auth/start)
+  if (cookie?.profile?.value) {
+    return cookie.profile.value;
+  }
+  // Fallback: check if ast cookie contains profile info (legacy)
   if (cookie?.ast?.value) {
     const session = sessionManager.getSession(cookie.ast.value);
     if (session) {
-      const account = await loadAccountData(session.profileName);
-      return { account, profileName: session.profileName, session };
+      return session.profileName;
     }
   }
-  return { account: null, profileName: null, session: null };
+  return null;
 }
 
-// Safe helper to get account data - returns account data or throws a helpful error
-async function requireAccount(cookie?: any): Promise<{ account: Record<string, any>; profileName: string; session: SessionData; accountPath: string }> {
-  const result = await getAccountFromSession(cookie);
-  if (!result.account || !result.profileName || !result.session) {
-    throw new Error("No valid session - client must authenticate first via /auth/start");
+// Get account data from cookie - simple and direct like the solo version
+async function getAccountFromCookie(cookie?: any): Promise<{ account: Record<string, any> | null; profileName: string | null; accountPath: string | null }> {
+  const profileName = getProfileFromCookie(cookie);
+  if (profileName) {
+    const account = await loadAccountData(profileName);
+    if (account) {
+      return { 
+        account, 
+        profileName, 
+        accountPath: getAccountPathForProfile(profileName) 
+      };
+    }
   }
-  return {
-    account: result.account,
-    profileName: result.profileName,
-    session: result.session,
-    accountPath: getAccountPathForProfile(result.profileName)
-  };
+  return { account: null, profileName: null, accountPath: null };
 }
 
-// Safe helper to get account data with fallback (won't throw)
+// Safe helper to get account data with fallback (won't throw) - like solo version but profile-aware
 async function getAccountSafe(cookie?: any): Promise<{ personId: string; screenName: string; accountPath: string | null; profileName: string | null }> {
-  try {
-    const result = await requireAccount(cookie);
+  const result = await getAccountFromCookie(cookie);
+  if (result.account) {
     return {
-      personId: result.account.personId,
-      screenName: result.account.screenName,
+      personId: result.account.personId || "unknown",
+      screenName: result.account.screenName || "anonymous",
       accountPath: result.accountPath,
       profileName: result.profileName
     };
-  } catch {
-    return {
-      personId: "unknown",
-      screenName: "anonymous",
-      accountPath: null,
-      profileName: null
-    };
   }
+  return {
+    personId: "unknown",
+    screenName: "anonymous",
+    accountPath: null,
+    profileName: null
+  };
+}
+
+// Alias for backward compatibility  
+async function getAccountFromSession(cookie?: any): Promise<{ account: Record<string, any> | null; profileName: string | null; session: SessionData | null }> {
+  const result = await getAccountFromCookie(cookie);
+  if (result.profileName) {
+    const session = sessionManager.getSessionByProfile(result.profileName);
+    return { account: result.account, profileName: result.profileName, session: session || null };
+  }
+  return { account: null, profileName: null, session: null };
 }
 
 // Load account data for a profile
@@ -846,7 +861,7 @@ const app = new Elysia()
 
   .post(
     "/auth/start",
-    async ({ cookie: { ast }, request, body }) => {
+    async ({ cookie: { ast, profile }, request, body }) => {
       // Get profile name from multiple sources (in priority order):
       // 1. X-Profile header
       // 2. ?profile= query param
@@ -897,6 +912,10 @@ const app = new Elysia()
       const sessionToken = sessionManager.createSession(profileName, account);
       ast.value = sessionToken;
       ast.httpOnly = true;
+      
+      // Also set profile name directly in cookie (simpler lookup for other endpoints)
+      profile.value = profileName;
+      profile.httpOnly = true;
       
       if (isNew) {
         console.log(`[AUTH] 🆕 New player joined: ${profileName}`);
@@ -961,7 +980,8 @@ const app = new Elysia()
     },
     {
       cookie: t.Object({
-        ast: t.Optional(t.String())
+        ast: t.Optional(t.String()),
+        profile: t.Optional(t.String())
       }),
       body: t.Optional(t.Object({
         profile: t.Optional(t.String())
