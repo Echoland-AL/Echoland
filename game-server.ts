@@ -8,6 +8,7 @@ import { AreaInfoSchema } from "./lib/schemas";
 // Clients identify themselves via X-Profile header or profile query param
 
 const ACCOUNTS_DIR = "./data/person/accounts";
+const LEGACY_ACCOUNT_PATH = "./data/person/account.json";
 
 // Optional: Default profile for testing (set via DEFAULT_PROFILE env var)
 // When set, clients without a profile header will use this profile
@@ -100,18 +101,8 @@ function getAccountPathForProfile(profileName: string): string {
   return `${ACCOUNTS_DIR}/${profileName}.json`;
 }
 
-// Legacy function - gets account path from session cookie
-// Used by endpoints that have access to cookie.ast
-function getAccountPath(cookie?: any): string {
-  if (cookie?.ast?.value) {
-    const session = sessionManager.getSession(cookie.ast.value);
-    if (session) {
-      return getAccountPathForProfile(session.profileName);
-    }
-  }
-  // Fallback for server initialization or when no session exists
-  console.warn("[WARN] getAccountPath called without valid session");
-  return `${ACCOUNTS_DIR}/_default.json`;
+function resolveAccountPath(profileName?: string | null): string {
+  return profileName ? getAccountPathForProfile(profileName) : LEGACY_ACCOUNT_PATH;
 }
 
 // Get profile name from cookie (simpler than session management)
@@ -130,19 +121,40 @@ function getProfileFromCookie(cookie?: any): string | null {
   return null;
 }
 
+async function loadLegacyAccount(): Promise<Record<string, any> | null> {
+  try {
+    return JSON.parse(await fs.readFile(LEGACY_ACCOUNT_PATH, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
 // Get account data from cookie - simple and direct like the solo version
 async function getAccountFromCookie(cookie?: any): Promise<{ account: Record<string, any> | null; profileName: string | null; accountPath: string | null }> {
-  const profileName = getProfileFromCookie(cookie);
+  let profileName = getProfileFromCookie(cookie);
   if (profileName) {
     const account = await loadAccountData(profileName);
     if (account) {
-      return { 
-        account, 
-        profileName, 
-        accountPath: getAccountPathForProfile(profileName) 
+      return {
+        account,
+        profileName,
+        accountPath: getAccountPathForProfile(profileName)
       };
+    } else {
+      // Profile might have been deleted - fall back to legacy
+      profileName = null;
     }
   }
+
+  const legacyAccount = await loadLegacyAccount();
+  if (legacyAccount) {
+    return {
+      account: legacyAccount,
+      profileName: null,
+      accountPath: LEGACY_ACCOUNT_PATH
+    };
+  }
+
   return { account: null, profileName: null, accountPath: null };
 }
 
