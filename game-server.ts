@@ -42,6 +42,20 @@ function getProfileFromCookie(cookie?: any): string | null {
   return cookie?.[ACTIVE_PROFILE_COOKIE]?.value ?? null;
 }
 
+async function resolveAccountPath(cookie?: any): Promise<string> {
+  const profileName = getProfileFromCookie(cookie);
+  if (profileName) {
+    await ensureProfileAccount(profileName);
+    return getAccountPathForProfile(profileName);
+  }
+  try {
+    await fs.access(LEGACY_ACCOUNT_PATH);
+  } catch {
+    await initDefaults();
+  }
+  return LEGACY_ACCOUNT_PATH;
+}
+
 const HOST = Bun.env.HOST ?? "0.0.0.0";
 const PORT_API = Number(Bun.env.PORT_API ?? 8000);
 const PORT_CDN_THINGDEFS = Number(Bun.env.PORT_CDN_THINGDEFS ?? 8001);
@@ -839,12 +853,12 @@ const app = new Elysia()
       }))
     }
   )
-  .post("/person/updateattachment", async ({ body }) => {
+  .post("/person/updateattachment", async ({ body, cookie }) => {
     return await accountMutex.runExclusive(async () => {
       console.log("[ATTACHMENT] Received request:", JSON.stringify(body));
       const { id, data, attachments } = body as any;
 
-      const accountPath = "./data/person/account.json";
+      const accountPath = await resolveAccountPath(cookie);
       let accountData: Record<string, any> = {};
       
       // Read account data
@@ -939,10 +953,10 @@ const app = new Elysia()
     });
   })
   // Set hand color for avatar
-  .post("/person/sethandcolor", async ({ body }) => {
+  .post("/person/sethandcolor", async ({ body, cookie }) => {
     console.log("[HAND COLOR] Received request:", body);
 
-    const accountPath = "./data/person/account.json";
+    const accountPath = await resolveAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1097,7 +1111,7 @@ const app = new Elysia()
     },
     { body: t.Object({ term: t.String(), byCreatorId: t.Optional(t.String()) }) }
   )
-  .post("/user/setName", async ({ body }) => {
+  .post("/user/setName", async ({ body, cookie }) => {
     const { newName } = body;
 
     if (!newName || typeof newName !== "string" || newName.length < 3) {
@@ -1107,7 +1121,7 @@ const app = new Elysia()
       });
     }
 
-    const accountPath = "./data/person/account.json";
+    const accountPath = await resolveAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1200,7 +1214,7 @@ const app = new Elysia()
       return new Response("Server error during repair", { status: 500 });
     }
   })
-  .post("/area", async ({ body }) => {
+  .post("/area", async ({ body, cookie }) => {
     const areaName = body?.name;
     if (!areaName || typeof areaName !== "string") {
       return new Response("Missing area name", { status: 400 });
@@ -1363,7 +1377,7 @@ const app = new Elysia()
     await fs.writeFile(listPath, JSON.stringify(areaList, null, 2));
 
     // ✅ Inject area into account.json under ownedAreas
-    const accountPath = "./data/person/account.json";
+    const accountPath = await resolveAccountPath(cookie);
     try {
       const accountFile = Bun.file(accountPath);
       let accountData = await accountFile.json();
@@ -1874,16 +1888,16 @@ const app = new Elysia()
       isFindable: t.Optional(t.Boolean())
     })
   })
-  .get("/inventory/:page", async ({ params }) => {
+  .get("/inventory/:page", async ({ params, cookie }) => {
     const pageParam = params?.page;
     const page = Math.max(0, parseInt(String(pageParam), 10) || 0);
 
-    // Load current user id from account.json
-    let personId = "unknown";
+    const accountPath = await resolveAccountPath(cookie);
+    let account: Record<string, any> = {};
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
-      personId = account.personId || personId;
+      account = JSON.parse(await fs.readFile(accountPath, "utf-8"));
     } catch {}
+    const personId = account.personId || "unknown";
 
     const invPath = `./data/person/inventory/${personId}.json`;
     let items: string[] = [];
@@ -1898,7 +1912,6 @@ const app = new Elysia()
     // Prefer inventory stored in account.json
     let usedPaged = false;
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
       const inv = account?.inventory;
       if (inv && inv.pages && typeof inv.pages === "object") {
         const pageItems = inv.pages[String(page)];
@@ -1921,21 +1934,14 @@ const app = new Elysia()
       headers: { "Content-Type": "application/json" }
     });
   })
-  .post("/inventory/save", async ({ body }) => {
+  .post("/inventory/save", async ({ body, cookie }) => {
     // Accept one of:
     // - { ids: [...] }
     // - { id: "..." }
     // - { page: number|string, inventoryItem: string }  // from client logs
     const invUpdate = body as any;
 
-    let personId = "unknown";
-    try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
-      personId = account.personId || personId;
-    } catch {}
-
-    // Load account.json and embed inventory there
-    const accountPath = "./data/person/account.json";
+    const accountPath = await resolveAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1974,6 +1980,7 @@ const app = new Elysia()
 
     // Also mirror to per-user inventory file for compatibility
     const invDir = `./data/person/inventory`;
+    const personId = accountData.personId || "unknown";
     const invPath = `${invDir}/${personId}.json`;
     await fs.mkdir(invDir, { recursive: true });
     await fs.writeFile(invPath, JSON.stringify(current, null, 2));
@@ -1986,7 +1993,7 @@ const app = new Elysia()
     body: t.Unknown(),
     type: "form"
   })
-  .post("/inventory/delete", async ({ body }) => {
+  .post("/inventory/delete", async ({ body, cookie }) => {
     // Delete item from inventory: { page: number|string, thingId: string }
     const { page, thingId } = body as any;
 
@@ -1997,13 +2004,7 @@ const app = new Elysia()
       });
     }
 
-    let personId = "unknown";
-    try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
-      personId = account.personId || personId;
-    } catch {}
-
-    const accountPath = "./data/person/account.json";
+    const accountPath = await resolveAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -2044,6 +2045,7 @@ const app = new Elysia()
     accountData.inventory = current;
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
 
+    const personId = accountData.personId || "unknown";
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -2055,7 +2057,7 @@ const app = new Elysia()
     }),
     type: "form"
   })
-  .post("/inventory/move", async ({ body }) => {
+  .post("/inventory/move", async ({ body, cookie }) => {
     // Move item within inventory: { fromPage: number|string, fromIndex: number, toPage: number|string, toIndex: number }
     const { fromPage, fromIndex, toPage, toIndex } = body as any;
 
@@ -2066,13 +2068,7 @@ const app = new Elysia()
       });
     }
 
-    let personId = "unknown";
-    try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
-      personId = account.personId || personId;
-    } catch {}
-
-    const accountPath = "./data/person/account.json";
+    const accountPath = await resolveAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -2108,6 +2104,7 @@ const app = new Elysia()
     accountData.inventory = current;
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
 
+    const personId = accountData.personId || "unknown";
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -2121,17 +2118,11 @@ const app = new Elysia()
     }),
     type: "form"
   })
-  .post("/inventory/update", async ({ body }) => {
+  .post("/inventory/update", async ({ body, cookie }) => {
     // Mirror /inventory/save behavior; some clients call update
     const invUpdate = body as any;
 
-    let personId = "unknown";
-    try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
-      personId = account.personId || personId;
-    } catch {}
-
-    const accountPath = "./data/person/account.json";
+    const accountPath = await resolveAccountPath(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -2202,6 +2193,7 @@ const app = new Elysia()
     accountData.inventory = current;
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
 
+    const personId = accountData.personId || "unknown";
     const invDir = `./data/person/inventory`;
     const invPath = `${invDir}/${personId}.json`;
     await fs.mkdir(invDir, { recursive: true });
