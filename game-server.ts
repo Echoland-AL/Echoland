@@ -28,63 +28,41 @@ class AsyncMutex {
 }
 
 const accountMutex = new AsyncMutex();
+const profileLocks = new Map<string, AsyncMutex>();
 const sessionProfiles = new Map<string, string>();
-
 const ACCOUNTS_DIR = "./data/person/accounts";
 const LEGACY_ACCOUNT_PATH = "./data/person/account.json";
 const ACTIVE_PROFILE_COOKIE = "profile";
 
-function getAccountPathForProfile(profileName: string): string {
-  return `${ACCOUNTS_DIR}/${profileName}.json`;
-}
+type PendingClient = {
+  id: string;
+  timestamp: Date;
+  resolve: (profile: string) => void;
+};
 
-function getProfileFromCookie(cookie?: any): string | null {
-  const decode = (value?: string | null) => {
-    if (typeof value !== "string") return null;
-    try {
-      return decodeURIComponent(value);
-    } catch {
-      return value;
-    }
-  };
+const pendingClients: PendingClient[] = [];
+let pendingClientCounter = 0;
+let pendingVersion = 0;
 
-  const cookieValue = decode(cookie?.[ACTIVE_PROFILE_COOKIE]?.value);
-  if (cookieValue) return cookieValue;
+type AdminSubscriber = (payload: string) => void;
+const adminSubscribers = new Set<AdminSubscriber>();
 
-  const astTokenRaw = decode(cookie?.ast?.value);
-  if (astTokenRaw && sessionProfiles.has(astTokenRaw)) {
-    return sessionProfiles.get(astTokenRaw)!;
-  }
-
-  return null;
-}
-
-async function ensureLegacyAccount() {
-  try {
-    await fs.access(LEGACY_ACCOUNT_PATH);
-  } catch {
-    await initDefaults();
+function broadcastAdminEvent(data: Record<string, any>) {
+  const payload = `data: ${JSON.stringify(data)}\n\n`;
+  for (const send of adminSubscribers) {
+    send(payload);
   }
 }
 
-async function resolveAccountData(cookie?: any): Promise<{ path: string; profileName: string; data: Record<string, any> }> {
-  const profileName = getProfileFromCookie(cookie);
-  if (!profileName) {
-    throw new Response(JSON.stringify({
-      ok: false,
-      error: "No profile selected. Assign this client to a profile in /admin."
-    }), {
-      status: 428,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  await ensureProfileAccount(profileName);
-  const pathToUse = getAccountPathForProfile(profileName);
-  const data = JSON.parse(await fs.readFile(pathToUse, "utf-8"));
-  return { path: pathToUse, profileName, data };
+function notifyPendingChange() {
+  pendingVersion++;
+  broadcastAdminEvent({ version: pendingVersion, pending: pendingClients.length });
 }
 
+function getProfileMutex(name: string) {
+  if (!profileLocks.has(name)) profileLocks.set(name, new AsyncMutex());
+  return profileLocks.get(name)!;
+}
 
 const HOST = Bun.env.HOST ?? "0.0.0.0";
 const PORT_API = Number(Bun.env.PORT_API ?? 8000);
@@ -174,194 +152,25 @@ async function injectInitialAreaToList(areaId: string, areaName: string) {
   await fs.writeFile(listPath, JSON.stringify(areaList, null, 2));
 }
 
-// removed duplicate default imports; using namespace imports declared above
+const textEncoder = new TextEncoder();
 
-async function initDefaults() {
-  const accountPath = "./data/person/account.json";
-
-  let accountData: Record<string, any> = {};
-  try {
-    accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
-  } catch {
-    // Create new identity
-    const personId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-    const screenName = "User" + Math.floor(Math.random() * 10000);
-    const homeAreaId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-
-    accountData = {
-      personId,
-      screenName,
-      homeAreaId,
-      attachments: {}
-    };
-
-    await fs.mkdir("./data/person", { recursive: true });
-    await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
-    console.log(`🧠 Memory card initialized for ${screenName}`);
-  }
-
-  // Ensure required fields exist for existing accounts
-  let needsUpdate = false;
-  if (!accountData.attachments) {
-    accountData.attachments = {};
-    needsUpdate = true;
-  }
-  
-  // Save updated account data if needed
-  if (needsUpdate) {
-    await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
-    console.log(`🔄 Updated account data with missing fields`);
-  }
-
-  // Create person info file
-  const infoPath = `./data/person/info/${accountData.personId}.json`;
-  try {
-    await fs.access(infoPath);
-  } catch {
-    const personInfo = {
-      id: accountData.personId,
-      screenName: accountData.screenName,
-      age: 0,
-      statusText: "",
-      isFindable: true,
-      isBanned: false,
-      lastActivityOn: new Date().toISOString(),
-      isFriend: false,
-      isEditorHere: true,
-      isListEditorHere: true,
-      isOwnerHere: true,
-      isAreaLocked: false,
-      isOnline: true
-    };
-
-    await fs.mkdir("./data/person/info", { recursive: true });
-    await fs.writeFile(infoPath, JSON.stringify(personInfo, null, 2));
-    console.log(`📇 Created person info file for ${accountData.screenName}`);
-  }
-  // Check if home area already exists
-  const areaInfoPath = `./data/area/info/${accountData.homeAreaId}.json`;
-
-  try {
-    await fs.access(areaInfoPath);
-    console.log(`✅ Home area already exists for ${accountData.screenName}, skipping creation`);
-    return; // Exit early, skip creating area again
-  } catch {
-    console.log(`🆕 Creating home area for ${accountData.screenName}`);
-  }
-
-  // Create default home area
-  const areaId = accountData.homeAreaId;
-  const areaName = `${accountData.screenName}'s home`;
-  const areaKey = `rr${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
-  const bundleFolder = `./data/area/bundle/${areaId}`;
-  await fs.mkdir(bundleFolder, { recursive: true });
-  const bundlePath = `${bundleFolder}/${areaKey}.json`;
-  await fs.writeFile(bundlePath, JSON.stringify({ thingDefinitions: [], serveTime: 0 }, null, 2));
-  const subareaPath = `./data/area/subareas/${areaId}.json`;
-  await fs.writeFile(subareaPath, JSON.stringify({ subareas: [] }, null, 2));
-
-  const areaInfo = {
-    editors: [
-      {
-        id: accountData.personId,
-        name: accountData.screenName,
-        isOwner: true
-      }
-    ],
-    listEditors: [],
-    copiedFromAreas: [],
-    name: areaName,
-    creationDate: new Date().toISOString(),
-    totalVisitors: 0,
-    isZeroGravity: false,
-    hasFloatingDust: false,
-    isCopyable: false,
-    isExcluded: false,
-    renameCount: 0,
-    copiedCount: 0,
-    isFavorited: false
-  };
-
-  const areaLoad = {
-    ok: true,
-    areaId,
-    areaName,
-    areaKey,
-    areaCreatorId: accountData.personId,
-    isPrivate: false,
-    isZeroGravity: false,
-    hasFloatingDust: false,
-    isCopyable: false,
-    onlyOwnerSetsLocks: false,
-    isExcluded: false,
-    environmentChangersJSON: JSON.stringify({ environmentChangers: [] }),
-    requestorIsEditor: true,
-    requestorIsListEditor: true,
-    requestorIsOwner: true,
-    placements: [
-      {
-        Id: crypto.randomUUID().replace(/-/g, "").slice(0, 24),
-        Tid: "000000000000000000000001", // Ground object ID
-        P: { x: 0, y: -0.3, z: 0 },
-        R: { x: 0, y: 0, z: 0 }
-      }
-    ],
-    serveTime: 17
-  };
-
-  const areaBundle = {
-    thingDefinitions: [],
-    serveTime: 3
-  };
-
-  await fs.mkdir(`./data/area/info`, { recursive: true });
-  await fs.mkdir(`./data/area/load`, { recursive: true });
-  await fs.mkdir(`./data/area/bundle`, { recursive: true });
-
-  await fs.writeFile(`./data/area/info/${areaId}.json`, JSON.stringify(areaInfo, null, 2));
-  await fs.writeFile(`./data/area/load/${areaId}.json`, JSON.stringify(areaLoad, null, 2));
-  await fs.writeFile(`./data/area/bundle/${areaId}.json`, JSON.stringify(areaBundle, null, 2));
-
-  console.log(`🌍 Created default home area for ${accountData.screenName}`);
+function getAccountPathForProfile(profileName: string) {
+  return `${ACCOUNTS_DIR}/${profileName}.json`;
 }
 
 async function listProfiles(): Promise<string[]> {
   try {
     await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
     const files = await fs.readdir(ACCOUNTS_DIR);
-    return files.filter((name) => name.endsWith(".json")).map((name) => name.replace(".json", ""));
+    return files.filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/i, ""));
   } catch {
     return [];
   }
 }
 
-async function loadAccountData(profileName: string): Promise<Record<string, any> | null> {
-  try {
-    const data = await fs.readFile(getAccountPathForProfile(profileName), "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return null;
-  }
-}
-
-async function saveAccountData(profileName: string, data: Record<string, any>): Promise<void> {
+async function saveProfileAccount(profileName: string, data: Record<string, any>) {
   await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
   await fs.writeFile(getAccountPathForProfile(profileName), JSON.stringify(data, null, 2));
-}
-
-async function createProfileAccount(profileName: string): Promise<Record<string, any>> {
-  const personId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-  const homeAreaId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-  const accountData = {
-    personId,
-    screenName: profileName,
-    homeAreaId,
-    attachments: {}
-  };
-  await saveAccountData(profileName, accountData);
-  await ensurePersonInfo(accountData);
-  await ensureHomeArea(accountData);
-  return accountData;
 }
 
 async function ensurePersonInfo(account: Record<string, any>) {
@@ -384,6 +193,7 @@ async function ensurePersonInfo(account: Record<string, any>) {
       isAreaLocked: false,
       isOnline: true
     };
+
     await fs.mkdir("./data/person/info", { recursive: true });
     await fs.writeFile(infoPath, JSON.stringify(personInfo, null, 2));
     console.log(`📇 [PROFILE] Created person info for ${account.screenName}`);
@@ -391,7 +201,10 @@ async function ensurePersonInfo(account: Record<string, any>) {
 }
 
 async function ensureHomeArea(account: Record<string, any>) {
-  const areaInfoPath = `./data/area/info/${account.homeAreaId}.json`;
+  const areaId = account.homeAreaId;
+  const areaName = `${account.screenName}'s home`;
+  const areaInfoPath = `./data/area/info/${areaId}.json`;
+
   try {
     await fs.access(areaInfoPath);
     return;
@@ -399,10 +212,7 @@ async function ensureHomeArea(account: Record<string, any>) {
     console.log(`[PROFILE] Creating home area for ${account.screenName}`);
   }
 
-  const areaId = account.homeAreaId;
-  const areaName = `${account.screenName}'s home`;
   const areaKey = `rr${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
-
   const bundleFolder = `./data/area/bundle/${areaId}`;
   await fs.mkdir(bundleFolder, { recursive: true });
   const bundlePath = `${bundleFolder}/${areaKey}.json`;
@@ -473,32 +283,89 @@ async function ensureHomeArea(account: Record<string, any>) {
   await fs.writeFile(`./data/area/bundle/${areaId}.json`, JSON.stringify(areaBundle, null, 2));
 
   await injectInitialAreaToList(areaId, areaName);
-
   console.log(`🌍 Created default home area for ${account.screenName}`);
 }
 
-async function setupClientProfile(profileName: string): Promise<Record<string, any>> {
-  let accountData = await loadAccountData(profileName);
-  if (!accountData) {
-    accountData = await createProfileAccount(profileName);
-  } else {
-    await ensurePersonInfo(accountData);
-    await ensureHomeArea(accountData);
-  }
+async function createProfileAccount(profileName: string) {
+  const personId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+  const homeAreaId = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+  const accountData = {
+    personId,
+    screenName: profileName,
+    homeAreaId,
+    attachments: {}
+  };
+  await saveProfileAccount(profileName, accountData);
+  await ensurePersonInfo(accountData);
+  await ensureHomeArea(accountData);
   return accountData;
 }
 
-async function ensureProfileAccount(profileName: string): Promise<void> {
+async function setupClientProfile(profileName: string) {
   await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
   try {
-    await fs.access(getAccountPathForProfile(profileName));
+    const existing = await fs.readFile(getAccountPathForProfile(profileName), "utf-8");
+    const parsed = JSON.parse(existing);
+    await ensurePersonInfo(parsed);
+    await ensureHomeArea(parsed);
+    return parsed;
   } catch {
-    await createProfileAccount(profileName);
+    return await createProfileAccount(profileName);
   }
 }
 
-const pendingClients: Array<{ id: string; resolve: (profile: string) => void; timestamp: Date }> = [];
-let pendingClientCounter = 0;
+function decodeCookieValue(value?: string | null) {
+  if (typeof value !== "string") return null;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function getProfileFromCookies(cookie?: Record<string, any>): string | null {
+  if (!cookie) return null;
+  const direct = decodeCookieValue(cookie[ACTIVE_PROFILE_COOKIE]?.value);
+  if (direct) return direct;
+  const ast = decodeCookieValue(cookie.ast?.value);
+  if (ast && sessionProfiles.has(ast)) {
+    return sessionProfiles.get(ast)!;
+  }
+  return null;
+}
+
+function shouldBypassProfile(url: URL) {
+  const pathname = url.pathname;
+  return pathname.startsWith("/admin")
+    || pathname.startsWith("/api/profiles")
+    || pathname === "/favicon.ico"
+    || pathname === "/health"
+    || pathname === "/"
+    || pathname === "/auth/start";
+}
+
+// removed duplicate default imports; using namespace imports declared above
+
+async function initDefaults() {
+  const accountPath = "./data/person/account.json";
+  try {
+    await fs.access(accountPath);
+    return;
+  } catch { }
+
+  const placeholder = {
+    personId: "__placeholder-person__",
+    screenName: "__placeholder__",
+    homeAreaId: "__placeholder-area__",
+    attachments: {}
+  };
+
+  await fs.mkdir("./data/person", { recursive: true });
+  await fs.writeFile(accountPath, JSON.stringify(placeholder, null, 2));
+  console.log("🧠 Placeholder memory card initialized");
+}
+
+await initDefaults()
 
 const areaIndex: { name: string, description?: string, id: string, playerCount: number }[] = [];
 const areaByUrlName = new Map<string, string>()
@@ -597,25 +464,25 @@ const findAreaByUrlName = (areaUrlName: string) => {
 // ✅ Inject default home area into arealist.json if not already present
 try {
   const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
-  const personId = account.personId;
-  const personName = account.screenName;
-  const defaultAreaId = account.homeAreaId;
-  const defaultAreaName = `${personName}'s home`;
+  if (account.screenName !== "__placeholder__") {
+    const defaultAreaId = account.homeAreaId;
+    const defaultAreaName = `${account.screenName}'s home`;
 
-  const listPath = "./data/area/arealist.json";
-  let alreadyExists = false;
+    const listPath = "./data/area/arealist.json";
+    let alreadyExists = false;
 
-  try {
-    const areaList = await Bun.file(listPath).json();
-    alreadyExists = areaList.created?.some((a: any) => a.id === defaultAreaId);
-  } catch { }
+    try {
+      const areaList = await Bun.file(listPath).json();
+      alreadyExists = areaList.created?.some((a: any) => a.id === defaultAreaId);
+    } catch { }
 
-  if (!alreadyExists) {
-    await injectInitialAreaToList(defaultAreaId, defaultAreaName);
-    console.log(`✅ Injected default area "${defaultAreaName}" into arealist.json`);
+    if (!alreadyExists) {
+      await injectInitialAreaToList(defaultAreaId, defaultAreaName);
+      console.log(`✅ Injected default area "${defaultAreaName}" into arealist.json`);
+    }
   }
 } catch {
-  // No legacy account yet – skip default area injection until a profile connects
+  console.warn("⚠️ Could not inject default area: account.json missing or invalid.");
 }
 
 
@@ -629,6 +496,44 @@ const app = new Elysia()
       url: request.url,
     }));
   })
+  .onRequest(async (context) => {
+    const url = new URL(context.request.url);
+    if (shouldBypassProfile(url)) return;
+    const profileName = getProfileFromCookies(context.cookie);
+    if (!profileName) {
+      return new Response(JSON.stringify({
+        ok: false,
+        error: "No profile selected. Assign this client to a profile in /admin."
+      }), {
+        status: 428,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const release = await getProfileMutex(profileName).lock();
+    try {
+      await setupClientProfile(profileName);
+      await fs.mkdir(path.dirname(LEGACY_ACCOUNT_PATH), { recursive: true });
+      await fs.copyFile(getAccountPathForProfile(profileName), LEGACY_ACCOUNT_PATH);
+      context.store.profileSwap = { profileName, release };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  })
+  .onAfterHandle(async ({ store }) => {
+    const swap = store.profileSwap as { profileName: string; release: () => void } | undefined;
+    if (!swap) return;
+    try {
+      await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
+      await fs.copyFile(LEGACY_ACCOUNT_PATH, getAccountPathForProfile(swap.profileName));
+    } catch (error) {
+      console.error(`[PROFILE] Failed to persist ${swap.profileName}:`, error);
+    } finally {
+      swap.release();
+      delete store.profileSwap;
+    }
+  })
   .onError(({ code, error, request }) => {
     console.info("error in middleware!", request.url, code);
     console.log(error);
@@ -637,7 +542,7 @@ const app = new Elysia()
     // Match Redux server's simple logging
     console.log(request.method, path, { body, params })
   })
-
+  .get("/favicon.ico", () => new Response(null, { status: 204 }))
   .get("/admin", async () => {
     const profiles = await listProfiles();
     const pendingHtml = pendingClients.length
@@ -676,13 +581,13 @@ const app = new Elysia()
     .card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
     .client-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
     .client-item:last-child { border-bottom: none; }
-    .assign-form { display: flex; gap: 8px; align-items: center; }
+    .assign-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     select, input[type="text"] { padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #fff; }
     button { padding: 8px 16px; border: none; border-radius: 6px; background: #2f89ff; color: white; cursor: pointer; }
     button:hover { background: #1d6adf; }
     .profile-tag { display: inline-block; padding: 6px 12px; background: rgba(255,255,255,0.1); margin: 4px; border-radius: 12px; }
     .empty { color: #8a93a6; font-style: italic; }
-    form.inline { display: flex; gap: 8px; margin-top: 12px; }
+    form.inline { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -701,9 +606,42 @@ const app = new Elysia()
       </form>
     </div>
   </div>
+  <script>
+    (() => {
+      const source = new EventSource('/admin/events');
+      let first = true;
+      source.onmessage = () => {
+        if (first) { first = false; return; }
+        location.reload();
+      };
+    })();
+  </script>
 </body>
 </html>`;
     return new Response(html, { headers: { "Content-Type": "text/html" } });
+  })
+  .get("/admin/events", () => {
+    let subscriber: AdminSubscriber | undefined;
+    let keepAlive: ReturnType<typeof setInterval> | undefined;
+    const stream = new ReadableStream({
+      start(controller) {
+        subscriber = (payload) => controller.enqueue(textEncoder.encode(payload));
+        adminSubscribers.add(subscriber);
+        subscriber(`data: ${JSON.stringify({ version: pendingVersion, pending: pendingClients.length })}\n\n`);
+        keepAlive = setInterval(() => controller.enqueue(textEncoder.encode(": keep-alive\n\n")), 15000);
+      },
+      cancel() {
+        if (subscriber) adminSubscribers.delete(subscriber);
+        if (keepAlive) clearInterval(keepAlive);
+      }
+    });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive"
+      }
+    });
   })
   .get("/admin/assign", async ({ query }) => {
     const clientId = query.clientId;
@@ -711,14 +649,15 @@ const app = new Elysia()
     if (!clientId || !profileName) {
       return Response.redirect("/admin", 302);
     }
+    await setupClientProfile(profileName);
     const idx = pendingClients.findIndex((c) => c.id === clientId);
     if (idx === -1) {
       return Response.redirect("/admin", 302);
     }
-    await setupClientProfile(profileName);
     const client = pendingClients.splice(idx, 1)[0];
     client.resolve(profileName);
-    console.log(`[ADMIN] Assigned profile ${profileName} to ${clientId}`);
+    notifyPendingChange();
+    console.log(`[ADMIN] Assigned profile "${profileName}" to client ${clientId}`);
     return Response.redirect("/admin", 302);
   }, {
     query: t.Object({
@@ -749,42 +688,37 @@ const app = new Elysia()
 
   .post(
     "/auth/start",
-    async ({ cookie, request, body }) => {
-      const { ast } = cookie;
-
-      let profileName =
-        request.headers.get("X-Profile") ||
-        (request.url ? new URL(request.url).searchParams.get("profile") : null) ||
-        (body && typeof body === "object" && "profile" in body ? (body as any).profile : null) ||
-        cookie[ACTIVE_PROFILE_COOKIE]?.value ||
-        null;
+    async ({ cookie }) => {
+      let profileName = getProfileFromCookies(cookie);
 
       if (!profileName) {
         const clientId = `client-${++pendingClientCounter}`;
         console.log(`[AUTH] New client awaiting profile selection (client ${clientId})`);
         profileName = await new Promise<string>((resolve) => {
-          pendingClients.push({ id: clientId, resolve, timestamp: new Date() });
+          pendingClients.push({ id: clientId, timestamp: new Date(), resolve });
+          notifyPendingChange();
         });
       }
 
       const account = await setupClientProfile(profileName);
-      await saveAccountData(profileName, account);
+      await saveProfileAccount(profileName, account);
       await fs.mkdir(path.dirname(LEGACY_ACCOUNT_PATH), { recursive: true });
       await fs.writeFile(LEGACY_ACCOUNT_PATH, JSON.stringify(account, null, 2));
 
-      const sessionToken = `s:${generateObjectId()}`;
-      ast.value = sessionToken;
-      ast.httpOnly = true;
+      let sessionToken = decodeCookieValue(cookie.ast?.value);
+      if (!sessionToken) {
+        sessionToken = `s:${generateObjectId()}`;
+      }
+      if (!cookie.ast) cookie.ast = {} as any;
+      cookie.ast.value = sessionToken;
+      cookie.ast.httpOnly = true;
       sessionProfiles.set(sessionToken, profileName);
 
-      if (cookie[ACTIVE_PROFILE_COOKIE]) {
-        cookie[ACTIVE_PROFILE_COOKIE].value = profileName;
-      } else {
-        cookie[ACTIVE_PROFILE_COOKIE] = {
-          value: profileName,
-          httpOnly: false,
-        } as any;
-      }
+      cookie[ACTIVE_PROFILE_COOKIE] = {
+        value: profileName,
+        httpOnly: false,
+        path: "/"
+      } as any;
 
       const attachmentsObj = typeof account.attachments === "string"
         ? JSON.parse(account.attachments || "{}")
@@ -837,19 +771,16 @@ const app = new Elysia()
     {
       cookie: t.Object({
         ast: t.Optional(t.String()),
-        profile: t.Optional(t.String()),
-      }),
-      body: t.Optional(t.Object({
         profile: t.Optional(t.String())
-      }))
+      })
     }
   )
-  .post("/person/updateattachment", async ({ body, cookie }) => {
+  .post("/person/updateattachment", async ({ body }) => {
     return await accountMutex.runExclusive(async () => {
       console.log("[ATTACHMENT] Received request:", JSON.stringify(body));
       const { id, data, attachments } = body as any;
 
-      const { path: accountPath } = await resolveAccountData(cookie);
+      const accountPath = "./data/person/account.json";
       let accountData: Record<string, any> = {};
       
       // Read account data
@@ -944,10 +875,10 @@ const app = new Elysia()
     });
   })
   // Set hand color for avatar
-  .post("/person/sethandcolor", async ({ body, cookie }) => {
+  .post("/person/sethandcolor", async ({ body }) => {
     console.log("[HAND COLOR] Received request:", body);
 
-    const { path: accountPath } = await resolveAccountData(cookie);
+    const accountPath = "./data/person/account.json";
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1031,7 +962,7 @@ const app = new Elysia()
     { body: t.Object({ areaId: t.String() }) }
   )
   .post("/area/save",
-    async ({ body, cookie }) => {
+    async ({ body }) => {
       const areaId = body.id || generateObjectId();
       const filePath = `./data/area/load/${areaId}.json`;
 
@@ -1039,7 +970,7 @@ const app = new Elysia()
       // Align creator identity with account.json (same as /area route)
       let creatorId = body.creatorId;
       try {
-        const { data: account } = await resolveAccountData(cookie);
+        const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
         if (account?.personId) creatorId = account.personId;
       } catch { }
       const sanitizedBody = {
@@ -1102,7 +1033,7 @@ const app = new Elysia()
     },
     { body: t.Object({ term: t.String(), byCreatorId: t.Optional(t.String()) }) }
   )
-  .post("/user/setName", async ({ body, cookie }) => {
+  .post("/user/setName", async ({ body }) => {
     const { newName } = body;
 
     if (!newName || typeof newName !== "string" || newName.length < 3) {
@@ -1112,7 +1043,7 @@ const app = new Elysia()
       });
     }
 
-    const { path: accountPath } = await resolveAccountData(cookie);
+    const accountPath = "./data/person/account.json";
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1155,11 +1086,12 @@ const app = new Elysia()
       totalSearchablePublicAreas: canned_areaList.totalSearchablePublicAreas + dynamic.totalSearchablePublicAreas
     };
   })
-  .get("/repair-home-area", async ({ cookie }) => {
+  .get("/repair-home-area", async () => {
+    const accountPath = "./data/person/account.json";
     const areaBase = "./data/area";
 
     try {
-      const { data: account } = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile(accountPath, "utf-8"));
       const homeId = account.homeAreaId;
       if (!homeId) return new Response("No homeAreaId found", { status: 400 });
 
@@ -1204,18 +1136,18 @@ const app = new Elysia()
       return new Response("Server error during repair", { status: 500 });
     }
   })
-  .post("/area", async ({ body, cookie }) => {
+  .post("/area", async ({ body }) => {
     const areaName = body?.name;
     if (!areaName || typeof areaName !== "string") {
       return new Response("Missing area name", { status: 400 });
     }
 
     // ✅ Load identity from account.json
-    let personId: string | undefined;
-    let personName: string | undefined;
+    let personId: string;
+    let personName: string;
 
     try {
-      const { data: account } = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
       personId = account.personId;
       personName = account.screenName;
 
@@ -1367,7 +1299,7 @@ const app = new Elysia()
     await fs.writeFile(listPath, JSON.stringify(areaList, null, 2));
 
     // ✅ Inject area into account.json under ownedAreas
-    const { path: accountPath } = await resolveAccountData(cookie);
+    const accountPath = "./data/person/account.json";
     try {
       const accountFile = Bun.file(accountPath);
       let accountData = await accountFile.json();
@@ -1469,7 +1401,7 @@ const app = new Elysia()
     app.routes.find(r => r.path === '/placement/info')!
       .handler({ body: { areaId, placementId } } as any)
   )
-  .post("/placement/new", async ({ body, cookie }) => {
+  .post("/placement/new", async ({ body }) => {
     const { areaId, placement } = body;
     const parsed = JSON.parse(decodeURIComponent(placement));
     const placementId = parsed.Id;
@@ -1477,7 +1409,7 @@ const app = new Elysia()
 
     // Inject identity from account.json
     try {
-      const { data: account } = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
       parsed.placerId = account.personId || "unknown";
       parsed.placerName = account.screenName || "anonymous";
     } catch {
@@ -1547,15 +1479,14 @@ const app = new Elysia()
   .get("person/friendsbystr",
     () => canned_friendsbystr
   )
-  .post("/placement/save", async ({ body, cookie }) => {
-    const { areaId, placementId, data } = body as any;
+  .post("/placement/save", async ({ body: { areaId, placementId, data } }) => {
     if (!areaId || !placementId || !data) {
       console.error("Missing required placement fields");
       return { ok: false, error: "Invalid placement data" };
     }
 
     try {
-      const { data: account } = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
       data.placerId = account.personId || "unknown";
       data.placerName = account.screenName || "anonymous";
     } catch {
@@ -1613,14 +1544,14 @@ const app = new Elysia()
       placementId: t.String()
     })
   })
-  .post("/placement/update", async ({ body, cookie }) => {
+  .post("/placement/update", async ({ body }) => {
     const { areaId, placement } = body;
     const parsed = JSON.parse(decodeURIComponent(placement));
     const placementId = parsed.Id;
     const placementPath = `./data/placement/info/${areaId}/${placementId}.json`;
 
     try {
-      const { data: account } = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
       parsed.placerId = account.personId || "unknown";
       parsed.placerName = account.screenName || "anonymous";
     } catch {
@@ -1654,7 +1585,7 @@ const app = new Elysia()
       placement: t.String()
     })
   })
-  .post("/placement/duplicate", async ({ body, cookie }) => {
+  .post("/placement/duplicate", async ({ body }) => {
     const { areaId, placements } = body;
 
     const areaFilePath = `./data/area/load/${areaId}.json`;
@@ -1670,7 +1601,7 @@ const app = new Elysia()
     let personId = "unknown";
     let screenName = "anonymous";
     try {
-      const { data: account } = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
       personId = account.personId || personId;
       screenName = account.screenName || screenName;
     } catch { }
@@ -1879,16 +1810,16 @@ const app = new Elysia()
       isFindable: t.Optional(t.Boolean())
     })
   })
-  .get("/inventory/:page", async ({ params, cookie }) => {
+  .get("/inventory/:page", async ({ params }) => {
     const pageParam = params?.page;
     const page = Math.max(0, parseInt(String(pageParam), 10) || 0);
 
-    const { path: accountPath } = await resolveAccountData(cookie);
-    let account: Record<string, any> = {};
+    // Load current user id from account.json
+    let personId = "unknown";
     try {
-      account = JSON.parse(await fs.readFile(accountPath, "utf-8"));
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      personId = account.personId || personId;
     } catch {}
-    const personId = account.personId || "unknown";
 
     const invPath = `./data/person/inventory/${personId}.json`;
     let items: string[] = [];
@@ -1903,6 +1834,7 @@ const app = new Elysia()
     // Prefer inventory stored in account.json
     let usedPaged = false;
     try {
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
       const inv = account?.inventory;
       if (inv && inv.pages && typeof inv.pages === "object") {
         const pageItems = inv.pages[String(page)];
@@ -1925,14 +1857,21 @@ const app = new Elysia()
       headers: { "Content-Type": "application/json" }
     });
   })
-  .post("/inventory/save", async ({ body, cookie }) => {
+  .post("/inventory/save", async ({ body }) => {
     // Accept one of:
     // - { ids: [...] }
     // - { id: "..." }
     // - { page: number|string, inventoryItem: string }  // from client logs
     const invUpdate = body as any;
 
-    const { path: accountPath } = await resolveAccountData(cookie);
+    let personId = "unknown";
+    try {
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      personId = account.personId || personId;
+    } catch {}
+
+    // Load account.json and embed inventory there
+    const accountPath = "./data/person/account.json";
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1971,7 +1910,6 @@ const app = new Elysia()
 
     // Also mirror to per-user inventory file for compatibility
     const invDir = `./data/person/inventory`;
-    const personId = accountData.personId || "unknown";
     const invPath = `${invDir}/${personId}.json`;
     await fs.mkdir(invDir, { recursive: true });
     await fs.writeFile(invPath, JSON.stringify(current, null, 2));
@@ -1984,7 +1922,7 @@ const app = new Elysia()
     body: t.Unknown(),
     type: "form"
   })
-  .post("/inventory/delete", async ({ body, cookie }) => {
+  .post("/inventory/delete", async ({ body }) => {
     // Delete item from inventory: { page: number|string, thingId: string }
     const { page, thingId } = body as any;
 
@@ -1995,17 +1933,22 @@ const app = new Elysia()
       });
     }
 
-    let accountInfo;
+    let personId = "unknown";
     try {
-      accountInfo = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      personId = account.personId || personId;
+    } catch {}
+
+    const accountPath = "./data/person/account.json";
+    let accountData: Record<string, any> = {};
+    try {
+      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
     } catch {
       return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
-    const accountPath = accountInfo.path;
-    let accountData: Record<string, any> = accountInfo.data;
 
     let current: { ids?: string[]; pages?: Record<string, any[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2037,7 +1980,6 @@ const app = new Elysia()
     accountData.inventory = current;
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
 
-    const personId = accountData.personId || "unknown";
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -2049,7 +1991,7 @@ const app = new Elysia()
     }),
     type: "form"
   })
-  .post("/inventory/move", async ({ body, cookie }) => {
+  .post("/inventory/move", async ({ body }) => {
     // Move item within inventory: { fromPage: number|string, fromIndex: number, toPage: number|string, toIndex: number }
     const { fromPage, fromIndex, toPage, toIndex } = body as any;
 
@@ -2060,17 +2002,22 @@ const app = new Elysia()
       });
     }
 
-    let accountInfo;
+    let personId = "unknown";
     try {
-      accountInfo = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      personId = account.personId || personId;
+    } catch {}
+
+    const accountPath = "./data/person/account.json";
+    let accountData: Record<string, any> = {};
+    try {
+      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
     } catch {
       return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
-    const accountPath = accountInfo.path;
-    let accountData: Record<string, any> = accountInfo.data;
 
     let current: { ids?: string[]; pages?: Record<string, any[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2097,7 +2044,6 @@ const app = new Elysia()
     accountData.inventory = current;
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
 
-    const personId = accountData.personId || "unknown";
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -2111,21 +2057,26 @@ const app = new Elysia()
     }),
     type: "form"
   })
-  .post("/inventory/update", async ({ body, cookie }) => {
+  .post("/inventory/update", async ({ body }) => {
     // Mirror /inventory/save behavior; some clients call update
     const invUpdate = body as any;
 
-    let accountInfo;
+    let personId = "unknown";
     try {
-      accountInfo = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      personId = account.personId || personId;
+    } catch {}
+
+    const accountPath = "./data/person/account.json";
+    let accountData: Record<string, any> = {};
+    try {
+      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
     } catch {
       return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
-    const accountPath = accountInfo.path;
-    let accountData: Record<string, any> = accountInfo.data;
 
     let current: { ids?: string[]; pages?: Record<string, string[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2187,7 +2138,6 @@ const app = new Elysia()
     accountData.inventory = current;
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
 
-    const personId = accountData.personId || "unknown";
     const invDir = `./data/person/inventory`;
     const invPath = `${invDir}/${personId}.json`;
     await fs.mkdir(invDir, { recursive: true });
@@ -2201,7 +2151,7 @@ const app = new Elysia()
     body: t.Unknown(),
     type: "form"
   })
-  .post("/thing", async ({ body, cookie }) => {
+  .post("/thing", async ({ body }) => {
     const { name = "" } = body;
     const thingId = generateObjectId();
     const infoPath = `./data/thing/info/${thingId}.json`;
@@ -2212,11 +2162,11 @@ const app = new Elysia()
     let creatorId = "unknown";
     let creatorName = "anonymous";
     try {
-      const { data: account } = await resolveAccountData(cookie);
+      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
       creatorId = account.personId || creatorId;
       creatorName = account.screenName || creatorName;
     } catch (e) {
-      console.warn("⚠️ Could not load account data for object metadata.", e);
+      console.warn("⚠️ Could not load account.json for object metadata.", e);
     }
 
     // ✅ Build thinginfo object
@@ -2715,22 +2665,10 @@ const app = new Elysia()
       updates: t.Record(t.String(), t.Any())
     })
   })
-  .post("/thing/topby", async ({ cookie }) => {
+  .post("/thing/topby", async () => {
     // Return top things created by the current user
-    let personId: string | null = null;
-    try {
-      const { data: account } = await resolveAccountData(cookie);
-      personId = account.personId ?? null;
-    } catch {
-      personId = null;
-    }
-
-    if (!personId) {
-      return new Response(JSON.stringify({ ids: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
+    const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+    const personId = account.personId;
     const file = Bun.file(`./data/person/topby/${personId}.json`);
 
     if (await file.exists()) {
