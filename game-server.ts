@@ -323,11 +323,28 @@ function decodeCookieValue(value?: string | null) {
   }
 }
 
-function getProfileFromCookies(cookie?: Record<string, any>): string | null {
-  if (!cookie) return null;
-  const direct = decodeCookieValue(cookie[ACTIVE_PROFILE_COOKIE]?.value);
+function parseCookieHeader(raw?: string | null) {
+  const jar: Record<string, string> = {};
+  if (!raw) return jar;
+  raw.split(";").forEach((pair) => {
+    const [key, ...rest] = pair.split("=");
+    if (!key) return;
+    jar[key.trim()] = rest.join("=").trim();
+  });
+  return jar;
+}
+
+function getProfileFromCookies(cookieJar?: Record<string, any>, headerJar?: Record<string, string>): string | null {
+  const profileValue =
+    cookieJar?.[ACTIVE_PROFILE_COOKIE]?.value ??
+    headerJar?.[ACTIVE_PROFILE_COOKIE];
+  const direct = decodeCookieValue(profileValue);
   if (direct) return direct;
-  const ast = decodeCookieValue(cookie.ast?.value);
+
+  const astValue =
+    cookieJar?.ast?.value ??
+    headerJar?.ast;
+  const ast = decodeCookieValue(astValue);
   if (ast && sessionProfiles.has(ast)) {
     return sessionProfiles.get(ast)!;
   }
@@ -499,7 +516,8 @@ const app = new Elysia()
   .onRequest(async (context) => {
     const url = new URL(context.request.url);
     if (shouldBypassProfile(url)) return;
-    const profileName = getProfileFromCookies(context.cookie);
+    const headerCookies = parseCookieHeader(context.request.headers.get("cookie"));
+    const profileName = getProfileFromCookies(undefined, headerCookies);
     if (!profileName) {
       return new Response(JSON.stringify({
         ok: false,
