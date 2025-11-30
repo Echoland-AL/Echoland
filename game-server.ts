@@ -763,6 +763,15 @@ const app = new Elysia()
       ast.httpOnly = true;
       sessionProfiles.set(sessionToken, profileName);
 
+      if (cookie[ACTIVE_PROFILE_COOKIE]) {
+        cookie[ACTIVE_PROFILE_COOKIE].value = profileName;
+      } else {
+        cookie[ACTIVE_PROFILE_COOKIE] = {
+          value: profileName,
+          httpOnly: false,
+        } as any;
+      }
+
       const attachmentsObj = typeof account.attachments === "string"
         ? JSON.parse(account.attachments || "{}")
         : (account.attachments ?? {});
