@@ -58,15 +58,19 @@ async function ensureLegacyAccount() {
   }
 }
 
-async function resolveAccountPath(cookie?: any): Promise<{ path: string; profileName: string | null }> {
+async function resolveAccountData(cookie?: any): Promise<{ path: string; profileName: string | null; data: Record<string, any> }> {
   const profileName = getProfileFromCookie(cookie);
   if (profileName) {
     await ensureProfileAccount(profileName);
-    return { path: getAccountPathForProfile(profileName), profileName };
+    const pathToUse = getAccountPathForProfile(profileName);
+    const data = JSON.parse(await fs.readFile(pathToUse, "utf-8"));
+    return { path: pathToUse, profileName, data };
   }
   await ensureLegacyAccount();
-  return { path: LEGACY_ACCOUNT_PATH, profileName: null };
+  const legacyData = JSON.parse(await fs.readFile(LEGACY_ACCOUNT_PATH, "utf-8"));
+  return { path: LEGACY_ACCOUNT_PATH, profileName: null, data: legacyData };
 }
+
 
 const HOST = Bun.env.HOST ?? "0.0.0.0";
 const PORT_API = Number(Bun.env.PORT_API ?? 8000);
@@ -822,7 +826,7 @@ const app = new Elysia()
       console.log("[ATTACHMENT] Received request:", JSON.stringify(body));
       const { id, data, attachments } = body as any;
 
-      const { path: accountPath } = await resolveAccountPath(cookie);
+      const { path: accountPath } = await resolveAccountData(cookie);
       let accountData: Record<string, any> = {};
       
       // Read account data
@@ -920,7 +924,7 @@ const app = new Elysia()
   .post("/person/sethandcolor", async ({ body, cookie }) => {
     console.log("[HAND COLOR] Received request:", body);
 
-    const { path: accountPath } = await resolveAccountPath(cookie);
+    const { path: accountPath } = await resolveAccountData(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1004,7 +1008,7 @@ const app = new Elysia()
     { body: t.Object({ areaId: t.String() }) }
   )
   .post("/area/save",
-    async ({ body }) => {
+    async ({ body, cookie }) => {
       const areaId = body.id || generateObjectId();
       const filePath = `./data/area/load/${areaId}.json`;
 
@@ -1012,7 +1016,7 @@ const app = new Elysia()
       // Align creator identity with account.json (same as /area route)
       let creatorId = body.creatorId;
       try {
-        const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+        const { data: account } = await resolveAccountData(cookie);
         if (account?.personId) creatorId = account.personId;
       } catch { }
       const sanitizedBody = {
@@ -1085,7 +1089,7 @@ const app = new Elysia()
       });
     }
 
-    const { path: accountPath } = await resolveAccountPath(cookie);
+    const { path: accountPath } = await resolveAccountData(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1128,12 +1132,11 @@ const app = new Elysia()
       totalSearchablePublicAreas: canned_areaList.totalSearchablePublicAreas + dynamic.totalSearchablePublicAreas
     };
   })
-  .get("/repair-home-area", async () => {
-    const accountPath = "./data/person/account.json";
+  .get("/repair-home-area", async ({ cookie }) => {
     const areaBase = "./data/area";
 
     try {
-      const account = JSON.parse(await fs.readFile(accountPath, "utf-8"));
+      const { data: account } = await resolveAccountData(cookie);
       const homeId = account.homeAreaId;
       if (!homeId) return new Response("No homeAreaId found", { status: 400 });
 
@@ -1185,11 +1188,11 @@ const app = new Elysia()
     }
 
     // ✅ Load identity from account.json
-    let personId: string;
-    let personName: string;
+    let personId: string | undefined;
+    let personName: string | undefined;
 
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const { data: account } = await resolveAccountData(cookie);
       personId = account.personId;
       personName = account.screenName;
 
@@ -1341,7 +1344,7 @@ const app = new Elysia()
     await fs.writeFile(listPath, JSON.stringify(areaList, null, 2));
 
     // ✅ Inject area into account.json under ownedAreas
-    const { path: accountPath } = await resolveAccountPath(cookie);
+    const { path: accountPath } = await resolveAccountData(cookie);
     try {
       const accountFile = Bun.file(accountPath);
       let accountData = await accountFile.json();
@@ -1443,7 +1446,7 @@ const app = new Elysia()
     app.routes.find(r => r.path === '/placement/info')!
       .handler({ body: { areaId, placementId } } as any)
   )
-  .post("/placement/new", async ({ body }) => {
+  .post("/placement/new", async ({ body, cookie }) => {
     const { areaId, placement } = body;
     const parsed = JSON.parse(decodeURIComponent(placement));
     const placementId = parsed.Id;
@@ -1451,7 +1454,7 @@ const app = new Elysia()
 
     // Inject identity from account.json
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const { data: account } = await resolveAccountData(cookie);
       parsed.placerId = account.personId || "unknown";
       parsed.placerName = account.screenName || "anonymous";
     } catch {
@@ -1521,14 +1524,15 @@ const app = new Elysia()
   .get("person/friendsbystr",
     () => canned_friendsbystr
   )
-  .post("/placement/save", async ({ body: { areaId, placementId, data } }) => {
+  .post("/placement/save", async ({ body, cookie }) => {
+    const { areaId, placementId, data } = body as any;
     if (!areaId || !placementId || !data) {
       console.error("Missing required placement fields");
       return { ok: false, error: "Invalid placement data" };
     }
 
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const { data: account } = await resolveAccountData(cookie);
       data.placerId = account.personId || "unknown";
       data.placerName = account.screenName || "anonymous";
     } catch {
@@ -1586,14 +1590,14 @@ const app = new Elysia()
       placementId: t.String()
     })
   })
-  .post("/placement/update", async ({ body }) => {
+  .post("/placement/update", async ({ body, cookie }) => {
     const { areaId, placement } = body;
     const parsed = JSON.parse(decodeURIComponent(placement));
     const placementId = parsed.Id;
     const placementPath = `./data/placement/info/${areaId}/${placementId}.json`;
 
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const { data: account } = await resolveAccountData(cookie);
       parsed.placerId = account.personId || "unknown";
       parsed.placerName = account.screenName || "anonymous";
     } catch {
@@ -1627,7 +1631,7 @@ const app = new Elysia()
       placement: t.String()
     })
   })
-  .post("/placement/duplicate", async ({ body }) => {
+  .post("/placement/duplicate", async ({ body, cookie }) => {
     const { areaId, placements } = body;
 
     const areaFilePath = `./data/area/load/${areaId}.json`;
@@ -1643,7 +1647,7 @@ const app = new Elysia()
     let personId = "unknown";
     let screenName = "anonymous";
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const { data: account } = await resolveAccountData(cookie);
       personId = account.personId || personId;
       screenName = account.screenName || screenName;
     } catch { }
@@ -1856,7 +1860,7 @@ const app = new Elysia()
     const pageParam = params?.page;
     const page = Math.max(0, parseInt(String(pageParam), 10) || 0);
 
-    const { path: accountPath } = await resolveAccountPath(cookie);
+    const { path: accountPath } = await resolveAccountData(cookie);
     let account: Record<string, any> = {};
     try {
       account = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1905,7 +1909,7 @@ const app = new Elysia()
     // - { page: number|string, inventoryItem: string }  // from client logs
     const invUpdate = body as any;
 
-    const { path: accountPath } = await resolveAccountPath(cookie);
+    const { path: accountPath } = await resolveAccountData(cookie);
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1968,16 +1972,17 @@ const app = new Elysia()
       });
     }
 
-    const { path: accountPath } = await resolveAccountPath(cookie);
-    let accountData: Record<string, any> = {};
+    let accountInfo;
     try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
+      accountInfo = await resolveAccountData(cookie);
     } catch {
       return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
+    const accountPath = accountInfo.path;
+    let accountData: Record<string, any> = accountInfo.data;
 
     let current: { ids?: string[]; pages?: Record<string, any[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2032,16 +2037,17 @@ const app = new Elysia()
       });
     }
 
-    const { path: accountPath } = await resolveAccountPath(cookie);
-    let accountData: Record<string, any> = {};
+    let accountInfo;
     try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
+      accountInfo = await resolveAccountData(cookie);
     } catch {
       return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
+    const accountPath = accountInfo.path;
+    let accountData: Record<string, any> = accountInfo.data;
 
     let current: { ids?: string[]; pages?: Record<string, any[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2086,16 +2092,17 @@ const app = new Elysia()
     // Mirror /inventory/save behavior; some clients call update
     const invUpdate = body as any;
 
-    const { path: accountPath } = await resolveAccountPath(cookie);
-    let accountData: Record<string, any> = {};
+    let accountInfo;
     try {
-      accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
+      accountInfo = await resolveAccountData(cookie);
     } catch {
       return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
+    const accountPath = accountInfo.path;
+    let accountData: Record<string, any> = accountInfo.data;
 
     let current: { ids?: string[]; pages?: Record<string, string[]> } = accountData.inventory || {};
     if (!current) current = {};
@@ -2171,7 +2178,7 @@ const app = new Elysia()
     body: t.Unknown(),
     type: "form"
   })
-  .post("/thing", async ({ body }) => {
+  .post("/thing", async ({ body, cookie }) => {
     const { name = "" } = body;
     const thingId = generateObjectId();
     const infoPath = `./data/thing/info/${thingId}.json`;
@@ -2182,11 +2189,11 @@ const app = new Elysia()
     let creatorId = "unknown";
     let creatorName = "anonymous";
     try {
-      const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
+      const { data: account } = await resolveAccountData(cookie);
       creatorId = account.personId || creatorId;
       creatorName = account.screenName || creatorName;
     } catch (e) {
-      console.warn("⚠️ Could not load account.json for object metadata.", e);
+      console.warn("⚠️ Could not load account data for object metadata.", e);
     }
 
     // ✅ Build thinginfo object
@@ -2685,10 +2692,22 @@ const app = new Elysia()
       updates: t.Record(t.String(), t.Any())
     })
   })
-  .post("/thing/topby", async () => {
+  .post("/thing/topby", async ({ cookie }) => {
     // Return top things created by the current user
-    const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
-    const personId = account.personId;
+    let personId: string | null = null;
+    try {
+      const { data: account } = await resolveAccountData(cookie);
+      personId = account.personId ?? null;
+    } catch {
+      personId = null;
+    }
+
+    if (!personId) {
+      return new Response(JSON.stringify({ ids: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
     const file = Bun.file(`./data/person/topby/${personId}.json`);
 
     if (await file.exists()) {
