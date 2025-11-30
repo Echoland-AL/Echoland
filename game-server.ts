@@ -28,6 +28,7 @@ class AsyncMutex {
 }
 
 const accountMutex = new AsyncMutex();
+const accountFileMutex = new AsyncMutex();
 const profileLocks = new Map<string, AsyncMutex>();
 const sessionProfiles = new Map<string, string>();
 const ACCOUNTS_DIR = "./data/person/accounts";
@@ -528,19 +529,21 @@ const app = new Elysia()
       });
     }
 
-    const release = await getProfileMutex(profileName).lock();
+    const releaseGlobal = await accountFileMutex.lock();
+    const releaseProfile = await getProfileMutex(profileName).lock();
     try {
       await setupClientProfile(profileName);
       await fs.mkdir(path.dirname(LEGACY_ACCOUNT_PATH), { recursive: true });
       await fs.copyFile(getAccountPathForProfile(profileName), LEGACY_ACCOUNT_PATH);
-      context.store.profileSwap = { profileName, release };
+      context.store.profileSwap = { profileName, releaseProfile, releaseGlobal };
     } catch (error) {
-      release();
+      releaseProfile();
+      releaseGlobal();
       throw error;
     }
   })
   .onAfterHandle(async ({ store }) => {
-    const swap = store.profileSwap as { profileName: string; release: () => void } | undefined;
+    const swap = store.profileSwap as { profileName: string; releaseProfile: () => void; releaseGlobal: () => void } | undefined;
     if (!swap) return;
     try {
       await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
@@ -548,7 +551,8 @@ const app = new Elysia()
     } catch (error) {
       console.error(`[PROFILE] Failed to persist ${swap.profileName}:`, error);
     } finally {
-      swap.release();
+      swap.releaseProfile();
+      swap.releaseGlobal();
       delete store.profileSwap;
     }
   })
