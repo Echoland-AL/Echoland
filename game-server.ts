@@ -2952,7 +2952,8 @@ const app = new Elysia()
     
     console.log(`🔎 Found ${results.length} results for "${searchTerm}" (page ${page})`);
 
-    return new Response(JSON.stringify({ ids: results }), {
+    // Client expects "thingIds" not "ids"
+    return new Response(JSON.stringify({ thingIds: results }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });
