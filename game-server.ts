@@ -1617,24 +1617,11 @@ const app = new Elysia()
 			}
 			
 			// Update environment type (Snow, Rain, etc.)
+			// Note: The field is _environmentType (with underscore) per the schema
 			if (environmentType !== undefined) {
-				// Add environment type to the changers
-				const currentChangers = JSON.parse(areaData.environmentChangersJSON || '{"environmentChangers":[]}');
-				
-				// Find or create the environment type entry
-				const existingIndex = currentChangers.environmentChangers.findIndex((c: any) => c.Name === "environmentType");
-				const envEntry = { Name: "environmentType", Type: environmentType };
-				
-				if (existingIndex >= 0) {
-					currentChangers.environmentChangers[existingIndex] = envEntry;
-				} else {
-					currentChangers.environmentChangers.push(envEntry);
-				}
-				
-				areaData.environmentChangersJSON = JSON.stringify(currentChangers);
-				areaData.environmentType = environmentType;
+				areaData._environmentType = environmentType;
 				updated = true;
-				console.log(`[AREA SETTINGS] Updated environmentType to ${environmentType} for ${areaId}`);
+				console.log(`[AREA SETTINGS] Updated _environmentType to ${environmentType} for ${areaId}`);
 			}
 			
 			// Update boolean settings
