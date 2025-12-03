@@ -719,7 +719,7 @@ if (thingIndex.length === 0) {
   }
 }
 
-function searchThings(term: string, page: number = 0, itemsPerPage: number = 20): string[] {
+function searchThings(term: string, limit: number = 0): string[] {
   const searchTerm = term.toLowerCase();
   
   const matches = thingIndex.filter(thing => {
@@ -729,8 +729,8 @@ function searchThings(term: string, page: number = 0, itemsPerPage: number = 20)
     return false;
   });
   
-  const start = page * itemsPerPage;
-  return matches.slice(start, start + itemsPerPage).map(t => t.id);
+  // Return all results if limit is 0, otherwise limit the results
+  return limit > 0 ? matches.slice(0, limit).map(t => t.id) : matches.map(t => t.id);
 }
 
 // ==================== END THING SEARCH INDEX ====================
@@ -2947,10 +2947,10 @@ const app = new Elysia()
 
     console.log(`📥 Received query: "${searchTerm}", page: ${page}`);
 
-    // Use cached index for fast search (100 results per page, matching inventory limit)
-    const results = searchThings(searchTerm, page, 100);
+    // Use cached index for fast search - return all matching results
+    const results = searchThings(searchTerm);
     
-    console.log(`🔎 Found ${results.length} results for "${searchTerm}" (page ${page})`);
+    console.log(`🔎 Found ${results.length} results for "${searchTerm}"`);
 
     // Client expects "thingIds" not "ids"
     return new Response(JSON.stringify({ thingIds: results }), {
