@@ -115,7 +115,7 @@ Use `127.0.0.1` if the server is on your local machine. Otherwise, use the IP of
 ```
 
 Download the client:  
-[Client Release](https://github.com/slimyburp-gamedrix/Echoland/releases/tag/client)
+[Client Only](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link)
 
 Download the images folder (if using the non-Steam client):  
 [Images Folder (Google Drive)](https://drive.google.com/file/d/1RbCZvx0SJK9oaLEhfDAfSgdZJKgmGxAU/view?usp=drive_link)
