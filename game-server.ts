@@ -2733,13 +2733,14 @@ const app = new Elysia()
     }
 
     // ✅ Update thing search index (so new things are immediately searchable)
-    if (name && !thingInfo.isUnlisted) {
+    // Always add to index even with empty name - rename will update it later
+    if (!thingInfo.isUnlisted) {
       thingIndex.push({
         id: thingId,
-        name: name.trim().toLowerCase(),
+        name: name ? name.trim().toLowerCase() : "",
         tags: []
       });
-      console.log(`[THING INDEX] ✅ Added thing ${thingId} (${name}) to search index`);
+      console.log(`[THING INDEX] ✅ Added thing ${thingId} (${name || "(unnamed)"}) to search index`);
     }
 
     return new Response(JSON.stringify({ id: thingId }), {
@@ -2917,6 +2918,14 @@ const app = new Elysia()
       if (thingEntry) {
         thingEntry.name = newName.trim().toLowerCase();
         console.log(`[THING INDEX] ✅ Updated thing ${thingId} name to "${newName}"`);
+      } else if (!infoData.isUnlisted) {
+        // Thing wasn't in the index (probably created with empty name), add it now
+        thingIndex.push({
+          id: thingId,
+          name: newName.trim().toLowerCase(),
+          tags: []
+        });
+        console.log(`[THING INDEX] ✅ Added thing ${thingId} (${newName}) to search index after rename`);
       }
 
       return new Response(JSON.stringify({ ok: true, name: newName }), {
