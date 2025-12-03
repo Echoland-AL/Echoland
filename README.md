@@ -147,6 +147,6 @@ Steps:
 9. You’re playing the game—enjoy!
 
 **Tip:** Create a shortcut to the `.bat` file for quick access.  
-The first launch may take time while the area index loads. After that, it will cache and start instantly next time.
+The first launch may take time while the area index/things loads. After that, it will cache and start instantly next time.
 
 ---
