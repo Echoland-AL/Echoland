@@ -9,7 +9,7 @@
 
 ## About
 
-Echoland is a community project I’ve been building myself, based on:
+Echoland is a community project built by gamedrix, based on:
 
 - The archiver work by Zetaphor and Cyel  
 - The skeleton game server originally created by Cyel
