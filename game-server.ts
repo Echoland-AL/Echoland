@@ -458,6 +458,17 @@ async function ensureHomeArea(account: Record<string, any>) {
 
   await injectInitialAreaToList(areaId, areaName);
 
+  // ✅ Update in-memory area index (so home area is accessible without server restart)
+  const areaUrlName = areaName.replace(/[^-_a-z0-9]/gi, "").toLowerCase();
+  areaIndex.push({
+    name: areaName,
+    description: "",
+    id: areaId,
+    playerCount: 0
+  });
+  areaByUrlName.set(areaUrlName, areaId);
+  console.log(`[HOME AREA] ✅ Added home area ${areaId} to in-memory index`);
+
   console.log(`🌍 Created default home area for ${account.screenName}`);
 }
 
@@ -1127,50 +1138,92 @@ const app = new Elysia()
   .post(
     "/area/load",
     async ({ body: { areaId, areaUrlName } }) => {
+      console.log(`[AREA LOAD] Request received - areaId: ${areaId}, areaUrlName: ${areaUrlName}`);
+      
       if (areaId) {
-        const file = Bun.file(path.resolve("./data/area/load/", areaId + ".json"))
+        const filePath = path.resolve("./data/area/load/", areaId + ".json");
+        const file = Bun.file(filePath);
+        console.log(`[AREA LOAD] Checking file: ${filePath}`);
+        
         if (await file.exists()) {
-          const areaData = await file.json();
-          return {
-            ...areaData,
-            forceEditMode: true,
-            requestorIsEditor: true,
-            requestorIsListEditor: true,
-            requestorIsOwner: true,
-            hasEditTools: true,
-            hasEditToolsPermanently: true,
-            editToolsExpiryDate: null,
-            isInEditToolsTrial: false,
-            wasEditToolsTrialEverActivated: false
-          };
-
+          try {
+            const areaData = await file.json();
+            console.log(`[AREA LOAD] ✅ Successfully loaded area ${areaId} (${areaData.areaName || 'unnamed'})`);
+            
+            // Also verify the bundle exists
+            const bundlePath = path.resolve("./data/area/bundle/", areaId, (areaData.areaKey || '') + ".json");
+            const bundleFile = Bun.file(bundlePath);
+            const bundleExists = await bundleFile.exists();
+            console.log(`[AREA LOAD] Bundle ${areaData.areaKey} exists: ${bundleExists}`);
+            
+            return {
+              ...areaData,
+              forceEditMode: true,
+              requestorIsEditor: true,
+              requestorIsListEditor: true,
+              requestorIsOwner: true,
+              hasEditTools: true,
+              hasEditToolsPermanently: true,
+              editToolsExpiryDate: null,
+              isInEditToolsTrial: false,
+              wasEditToolsTrialEverActivated: false
+            };
+          } catch (err) {
+            console.error(`[AREA LOAD] ❌ Error parsing area ${areaId}:`, err);
+            return Response.json({ "ok": false, "_reasonDenied": "Private", "serveTime": 13 }, { status: 200 });
+          }
         } else {
-          console.error("couldn't find area", areaId, "on disk?")
-          return Response.json({ "ok": false, "_reasonDenied": "Private", "serveTime": 13 }, { status: 200 })
+          console.error(`[AREA LOAD] ❌ Area file not found on disk: ${areaId}`);
+          return Response.json({ "ok": false, "_reasonDenied": "Private", "serveTime": 13 }, { status: 200 });
         }
       }
       else if (areaUrlName) {
-        const areaId = findAreaByUrlName(areaUrlName)
-        console.log("client asked to load", areaUrlName, " - found", areaId);
+        const foundAreaId = findAreaByUrlName(areaUrlName);
+        console.log(`[AREA LOAD] Looking up by URL name: ${areaUrlName} -> ${foundAreaId || 'NOT FOUND'}`);
 
-        if (areaId) {
-          console.error("couldn't find area", areaUrlName, "in our index?")
-          return await Bun.file(path.resolve("./data/area/load/" + areaId + ".json")).json()
+        if (foundAreaId) {
+          const filePath = path.resolve("./data/area/load/" + foundAreaId + ".json");
+          const file = Bun.file(filePath);
+          
+          if (await file.exists()) {
+            console.log(`[AREA LOAD] ✅ Found and loading area by URL name: ${areaUrlName}`);
+            return await file.json();
+          } else {
+            console.error(`[AREA LOAD] ❌ Area in index but file missing: ${foundAreaId}`);
+            return Response.json({ "ok": false, "_reasonDenied": "Private", "serveTime": 13 }, { status: 200 });
+          }
         }
         else {
-          return Response.json({ "ok": false, "_reasonDenied": "Private", "serveTime": 13 }, { status: 200 })
+          console.error(`[AREA LOAD] ❌ Area URL name not in index: ${areaUrlName}`);
+          return Response.json({ "ok": false, "_reasonDenied": "Private", "serveTime": 13 }, { status: 200 });
         }
       }
 
-      console.error("client asked for neither an areaId or an areaUrlName?")
-      // Yeah that seems to be the default response, and yeah it returns a 200 OK
-      return Response.json({ "ok": false, "_reasonDenied": "Private", "serveTime": 13 }, { status: 200 })
+      console.error("[AREA LOAD] ❌ Client asked for neither an areaId or an areaUrlName");
+      return Response.json({ "ok": false, "_reasonDenied": "Private", "serveTime": 13 }, { status: 200 });
     },
     { body: t.Object({ areaId: t.Optional(t.String()), areaUrlName: t.Optional(t.String()), isPrivate: t.String() }) }
   )
   .post(
     "/area/info",
-    ({ body: { areaId } }) => Bun.file(path.resolve("./data/area/info/", areaId + ".json")).json(),
+    async ({ body: { areaId } }) => {
+      const filePath = path.resolve("./data/area/info/", areaId + ".json");
+      const file = Bun.file(filePath);
+      
+      if (await file.exists()) {
+        try {
+          const data = await file.json();
+          console.log(`[AREA INFO] Loaded info for area ${areaId}`);
+          return data;
+        } catch (err) {
+          console.error(`[AREA INFO] Error parsing info for area ${areaId}:`, err);
+          return { ok: false, error: "Failed to parse area info" };
+        }
+      } else {
+        console.warn(`[AREA INFO] Area info file not found: ${areaId}`);
+        return { ok: false, error: "Area not found" };
+      }
+    },
     { body: t.Object({ areaId: t.String() }) }
   )
   .post("/area/save",
@@ -1555,6 +1608,17 @@ const app = new Elysia()
     } catch {
       console.warn("⚠️ Could not update account.json with new owned area.");
     }
+
+    // ✅ Update in-memory area index (so area is accessible without server restart)
+    const areaUrlName = areaName.replace(/[^-_a-z0-9]/gi, "").toLowerCase();
+    areaIndex.push({
+      name: areaName,
+      description: "",
+      id: areaId,
+      playerCount: 0
+    });
+    areaByUrlName.set(areaUrlName, areaId);
+    console.log(`[AREA CREATE] ✅ Added area ${areaId} (${areaName}) to in-memory index`);
 
     return new Response(JSON.stringify({ id: areaId }), {
       status: 200,
