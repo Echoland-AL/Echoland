@@ -3,7 +3,7 @@
 
 # Echoland
 
-**Echoland** is a single-player (for now) user-hosted server for the defunct VR creation platform Anyland.
+**Echoland** is a server for the defunct VR creation platform Anyland.
 
 ---
 
