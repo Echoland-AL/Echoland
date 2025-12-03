@@ -28,55 +28,45 @@ class AsyncMutex {
 }
 
 const accountMutex = new AsyncMutex();
-const profileSwapMutex = new AsyncMutex();
-const sessionProfiles = new Map<string, string>();
 const textEncoder = new TextEncoder();
 
 const ACCOUNTS_DIR = "./data/person/accounts";
 const LEGACY_ACCOUNT_PATH = "./data/person/account.json";
-const ACTIVE_PROFILE_COOKIE = "profile";
+
+// Track the currently active profile (for Unity clients that don't send cookies)
+let currentActiveProfile: string | null = null;
 
 function getAccountPathForProfile(profileName: string): string {
   return `${ACCOUNTS_DIR}/${profileName}.json`;
 }
 
-function decodeCookieValue(value?: string | null): string | null {
-  if (!value) return null;
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function parseCookieHeader(raw?: string | null): Record<string, string> {
-  if (!raw) return {};
-  return raw.split(";").reduce((acc, part) => {
-    const [key, ...rest] = part.trim().split("=");
-    if (!key) return acc;
-    const joined = rest.join("=");
-    const decoded = decodeCookieValue(joined) ?? "";
-    acc[key] = decoded;
-    return acc;
-  }, {} as Record<string, string>);
-}
-
-function getProfileFromCookies(cookieJar?: any, headerJar?: Record<string, string>): string | null {
-  const explicitProfile = decodeCookieValue(
-    cookieJar?.[ACTIVE_PROFILE_COOKIE]?.value ?? headerJar?.[ACTIVE_PROFILE_COOKIE]
-  );
-  if (explicitProfile) return explicitProfile;
-
-  const astToken = decodeCookieValue(cookieJar?.ast?.value ?? headerJar?.ast);
-  if (astToken && sessionProfiles.has(astToken)) {
-    return sessionProfiles.get(astToken)!;
-  }
-
-  return null;
-}
-
-async function resolveAccountPath(cookie?: any): Promise<string> {
+// Get the path to the account file - always use legacy path so sync works correctly
+async function getAccountPath(): Promise<string> {
   return LEGACY_ACCOUNT_PATH;
+}
+
+// Sync legacy file to profile and vice versa
+async function syncProfileToLegacy(profileName: string): Promise<void> {
+  const profilePath = getAccountPathForProfile(profileName);
+  try {
+    const data = await fs.readFile(profilePath, "utf-8");
+    await fs.mkdir(path.dirname(LEGACY_ACCOUNT_PATH), { recursive: true });
+    await fs.writeFile(LEGACY_ACCOUNT_PATH, data);
+  } catch (e) {
+    console.warn(`[PROFILE] Could not sync ${profileName} to legacy:`, e);
+  }
+}
+
+async function syncLegacyToProfile(profileName: string): Promise<void> {
+  const profilePath = getAccountPathForProfile(profileName);
+  try {
+    const data = await fs.readFile(LEGACY_ACCOUNT_PATH, "utf-8");
+    await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
+    await fs.writeFile(profilePath, data);
+    console.log(`[PROFILE] Saved data for ${profileName}`);
+  } catch (e) {
+    console.warn(`[PROFILE] Could not sync legacy to ${profileName}:`, e);
+  }
 }
 
 const HOST = Bun.env.HOST ?? "0.0.0.0";
@@ -490,25 +480,9 @@ async function ensureProfileAccount(profileName: string): Promise<void> {
   }
 }
 
-async function loadProfileIntoLegacy(profileName: string): Promise<void> {
-  await ensureProfileAccount(profileName);
-  const profilePath = getAccountPathForProfile(profileName);
-  const data = await fs.readFile(profilePath, "utf-8");
-  await fs.mkdir(path.dirname(LEGACY_ACCOUNT_PATH), { recursive: true });
-  await fs.writeFile(LEGACY_ACCOUNT_PATH, data);
-}
-
-async function persistLegacyToProfile(profileName: string): Promise<void> {
-  const profilePath = getAccountPathForProfile(profileName);
-  await fs.mkdir(ACCOUNTS_DIR, { recursive: true });
-  const data = await fs.readFile(LEGACY_ACCOUNT_PATH, "utf-8");
-  await fs.writeFile(profilePath, data);
-}
-
 type PendingClient = { id: string; resolve: (profile: string) => void; timestamp: Date };
 const pendingClients: PendingClient[] = [];
 let pendingClientCounter = 0;
-const requestProfileMap = new WeakMap<Request, { profileName: string; release: () => void }>();
 const adminEventClients = new Set<{
   id: number;
   controller: ReadableStreamDefaultController<Uint8Array>;
@@ -541,17 +515,8 @@ function notifyPendingChange() {
   sendAdminEvent("pending", { pending: pendingClients.length });
 }
 
-async function releaseProfileLock(request: Request) {
-  const entry = requestProfileMap.get(request);
-  if (!entry) return;
-  try {
-    await persistLegacyToProfile(entry.profileName);
-  } catch (error) {
-    console.error("[PROFILE] Failed to persist profile data:", error);
-  } finally {
-    entry.release();
-    requestProfileMap.delete(request);
-  }
+function notifyProfileChange() {
+  sendAdminEvent("profile", { profile: currentActiveProfile });
 }
 
 const areaIndex: { name: string, description?: string, id: string, playerCount: number }[] = [];
@@ -674,7 +639,7 @@ try {
 
 
 const app = new Elysia()
-  .onRequest(async ({ request, cookie }) => {
+  .onRequest(async ({ request }) => {
     console.info(JSON.stringify({
       ts: new Date().toISOString(),
       ip: request.headers.get('X-Real-Ip'),
@@ -682,25 +647,8 @@ const app = new Elysia()
       method: request.method,
       url: request.url,
     }));
-
-    const headerCookies = parseCookieHeader(request.headers.get("cookie"));
-    const profileName = getProfileFromCookies(cookie, headerCookies);
-    if (!profileName) return;
-
-    const release = await profileSwapMutex.lock();
-    try {
-      await loadProfileIntoLegacy(profileName);
-      requestProfileMap.set(request, { profileName, release });
-    } catch (err) {
-      release();
-      throw err;
-    }
-  })
-  .onAfterHandle(async ({ request }) => {
-    await releaseProfileLock(request);
   })
   .onError(async ({ code, error, request }) => {
-    await releaseProfileLock(request);
     console.info("error in middleware!", request.url, code);
     console.log(error);
   })
@@ -754,11 +702,17 @@ const app = new Elysia()
     .profile-tag { display: inline-block; padding: 6px 12px; background: rgba(255,255,255,0.1); margin: 4px; border-radius: 12px; }
     .empty { color: #8a93a6; font-style: italic; }
     form.inline { display: flex; gap: 8px; margin-top: 12px; }
+    .active-badge { display: inline-block; padding: 6px 14px; background: #22c55e; color: #000; font-weight: bold; border-radius: 20px; margin-left: 12px; }
+    .header { display: flex; align-items: center; margin-bottom: 20px; }
+    .header h1 { margin: 0; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Echoland Admin</h1>
+    <div class="header">
+      <h1>Echoland Admin</h1>
+      <span id="active-profile" class="active-badge">${currentActiveProfile ? 'Active: ' + currentActiveProfile : 'No active profile'}</span>
+    </div>
     <div class="card">
       <h2>Pending Clients (${pendingClients.length})</h2>
       ${pendingHtml}
@@ -774,13 +728,56 @@ const app = new Elysia()
   </div>
   <script>
     (() => {
-      try {
-        const events = new EventSource('/admin/events');
-        const refresh = () => window.location.reload();
-        events.addEventListener('pending', refresh);
-      } catch (err) {
-        console.warn('SSE unavailable', err);
+      let eventSource = null;
+      let reconnectTimer = null;
+      
+      function connect() {
+        if (eventSource) {
+          eventSource.close();
+        }
+        
+        console.log('[Admin] Connecting to SSE...');
+        eventSource = new EventSource('/admin/events');
+        
+        eventSource.onopen = () => {
+          console.log('[Admin] SSE connected');
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+        };
+        
+        eventSource.onerror = (e) => {
+          console.log('[Admin] SSE error, will reconnect...');
+          eventSource.close();
+          if (!reconnectTimer) {
+            reconnectTimer = setTimeout(connect, 2000);
+          }
+        };
+        
+        eventSource.addEventListener('pending', (e) => {
+          console.log('[Admin] Pending change:', e.data);
+          window.location.reload();
+        });
+        
+        eventSource.addEventListener('profile', (e) => {
+          console.log('[Admin] Profile change:', e.data);
+          // Update active profile display without full reload
+          try {
+            const data = JSON.parse(e.data);
+            const badge = document.getElementById('active-profile');
+            if (badge && data.profile) {
+              badge.textContent = 'Active: ' + data.profile;
+            }
+          } catch {}
+        });
+        
+        eventSource.addEventListener('connected', (e) => {
+          console.log('[Admin] SSE ready');
+        });
       }
+      
+      connect();
     })();
   </script>
 </body>
@@ -878,24 +875,15 @@ const app = new Elysia()
     "/auth/start",
     async ({ cookie, request, body }) => {
       const { ast } = cookie;
-      const bodyAst =
-        body && typeof body === "object" && "ast" in body && body.ast != null
-          ? decodeCookieValue(String((body as any).ast))
-          : null;
-      const cookieAst = decodeCookieValue(ast?.value ?? null);
-      const incomingAstToken = bodyAst ?? cookieAst;
 
+      // Get profile from header, query param, or body
       let profileName =
         request.headers.get("X-Profile") ||
         (request.url ? new URL(request.url).searchParams.get("profile") : null) ||
         (body && typeof body === "object" && "profile" in body ? (body as any).profile : null) ||
-        cookie[ACTIVE_PROFILE_COOKIE]?.value ||
         null;
 
-      if (!profileName && incomingAstToken && sessionProfiles.has(incomingAstToken)) {
-        profileName = sessionProfiles.get(incomingAstToken)!;
-      }
-
+      // If no profile specified, wait for admin to assign one
       if (!profileName) {
         const clientId = `client-${++pendingClientCounter}`;
         console.log(`[AUTH] New client awaiting profile selection (client ${clientId})`);
@@ -905,24 +893,30 @@ const app = new Elysia()
         });
       }
 
-      const account = await setupClientProfile(profileName);
-      await fs.mkdir(path.dirname(LEGACY_ACCOUNT_PATH), { recursive: true });
-      await fs.writeFile(LEGACY_ACCOUNT_PATH, JSON.stringify(account, null, 2));
-      await persistLegacyToProfile(profileName);
+      // If there was a previous active profile, save its data first
+      if (currentActiveProfile && currentActiveProfile !== profileName) {
+        console.log(`[AUTH] Switching from profile ${currentActiveProfile} to ${profileName}`);
+        await syncLegacyToProfile(currentActiveProfile);
+      }
 
-      const activeAstToken = incomingAstToken ?? `s:${generateObjectId()}`;
+      // Setup the new profile
+      const account = await setupClientProfile(profileName);
+      
+      // Set this as the active profile
+      currentActiveProfile = profileName;
+      console.log(`[AUTH] ✅ Active profile set to: ${profileName}`);
+      
+      // Sync profile data to legacy file (for endpoints that read from it)
+      await syncProfileToLegacy(profileName);
+      
+      // Notify admin panel of profile change
+      notifyProfileChange();
+
+      // Set session cookie
+      const activeAstToken = `s:${generateObjectId()}`;
       ast.value = activeAstToken;
       ast.httpOnly = true;
       ast.path = "/";
-      sessionProfiles.set(activeAstToken, profileName);
-      if (bodyAst) {
-        sessionProfiles.set(bodyAst, profileName);
-      }
-      const cookieJar = cookie as Record<string, any>;
-      cookieJar[ACTIVE_PROFILE_COOKIE] ??= {};
-      cookieJar[ACTIVE_PROFILE_COOKIE].value = profileName;
-      cookieJar[ACTIVE_PROFILE_COOKIE].path = "/";
-      cookieJar[ACTIVE_PROFILE_COOKIE].httpOnly = false;
 
       const attachmentsObj = typeof account.attachments === "string"
         ? JSON.parse(account.attachments || "{}")
@@ -982,12 +976,12 @@ const app = new Elysia()
       }))
     }
   )
-  .post("/person/updateattachment", async ({ body, cookie }) => {
+  .post("/person/updateattachment", async ({ body }) => {
     return await accountMutex.runExclusive(async () => {
       console.log("[ATTACHMENT] Received request:", JSON.stringify(body));
       const { id, data, attachments } = body as any;
 
-      const accountPath = await resolveAccountPath(cookie);
+      const accountPath = await getAccountPath();
       let accountData: Record<string, any> = {};
       
       // Read account data
@@ -1067,6 +1061,11 @@ const app = new Elysia()
         const tempPath = `${accountPath}.tmp`;
         await fs.writeFile(tempPath, JSON.stringify(accountData, null, 2));
         await fs.rename(tempPath, accountPath);
+        
+        // Also persist to profile file if there's an active profile
+        if (currentActiveProfile) {
+          await syncLegacyToProfile(currentActiveProfile);
+        }
       } catch (e) {
         console.error("[ATTACHMENT] Failed to write account:", e);
         return new Response(JSON.stringify({ ok: false, error: "Account write failed" }), {
@@ -1082,10 +1081,10 @@ const app = new Elysia()
     });
   })
   // Set hand color for avatar
-  .post("/person/sethandcolor", async ({ body, cookie }) => {
+  .post("/person/sethandcolor", async ({ body }) => {
     console.log("[HAND COLOR] Received request:", body);
 
-    const accountPath = await resolveAccountPath(cookie);
+    const accountPath = await getAccountPath();
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1112,6 +1111,11 @@ const app = new Elysia()
     }
 
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
+    
+    // Also persist to profile file if there's an active profile
+    if (currentActiveProfile) {
+      await syncLegacyToProfile(currentActiveProfile);
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -1240,7 +1244,7 @@ const app = new Elysia()
     },
     { body: t.Object({ term: t.String(), byCreatorId: t.Optional(t.String()) }) }
   )
-  .post("/user/setName", async ({ body, cookie }) => {
+  .post("/user/setName", async ({ body }) => {
     const { newName } = body;
 
     if (!newName || typeof newName !== "string" || newName.length < 3) {
@@ -1250,7 +1254,7 @@ const app = new Elysia()
       });
     }
 
-    const accountPath = await resolveAccountPath(cookie);
+    const accountPath = await getAccountPath();
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -1343,7 +1347,7 @@ const app = new Elysia()
       return new Response("Server error during repair", { status: 500 });
     }
   })
-  .post("/area", async ({ body, cookie }) => {
+  .post("/area", async ({ body }) => {
     const areaName = body?.name;
     if (!areaName || typeof areaName !== "string") {
       return new Response("Missing area name", { status: 400 });
@@ -1506,7 +1510,7 @@ const app = new Elysia()
     await fs.writeFile(listPath, JSON.stringify(areaList, null, 2));
 
     // ✅ Inject area into account.json under ownedAreas
-    const accountPath = await resolveAccountPath(cookie);
+    const accountPath = await getAccountPath();
     try {
       const accountFile = Bun.file(accountPath);
       let accountData = await accountFile.json();
@@ -2017,11 +2021,11 @@ const app = new Elysia()
       isFindable: t.Optional(t.Boolean())
     })
   })
-  .get("/inventory/:page", async ({ params, cookie }) => {
+  .get("/inventory/:page", async ({ params }) => {
     const pageParam = params?.page;
     const page = Math.max(0, parseInt(String(pageParam), 10) || 0);
 
-    const accountPath = await resolveAccountPath(cookie);
+    const accountPath = await getAccountPath();
     let account: Record<string, any> = {};
     try {
       account = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -2063,14 +2067,14 @@ const app = new Elysia()
       headers: { "Content-Type": "application/json" }
     });
   })
-  .post("/inventory/save", async ({ body, cookie }) => {
+  .post("/inventory/save", async ({ body }) => {
     // Accept one of:
     // - { ids: [...] }
     // - { id: "..." }
     // - { page: number|string, inventoryItem: string }  // from client logs
     const invUpdate = body as any;
 
-    const accountPath = await resolveAccountPath(cookie);
+    const accountPath = await getAccountPath();
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -2113,6 +2117,11 @@ const app = new Elysia()
     const invPath = `${invDir}/${personId}.json`;
     await fs.mkdir(invDir, { recursive: true });
     await fs.writeFile(invPath, JSON.stringify(current, null, 2));
+    
+    // Persist to profile file if there's an active profile
+    if (currentActiveProfile) {
+      await syncLegacyToProfile(currentActiveProfile);
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -2122,7 +2131,7 @@ const app = new Elysia()
     body: t.Unknown(),
     type: "form"
   })
-  .post("/inventory/delete", async ({ body, cookie }) => {
+  .post("/inventory/delete", async ({ body }) => {
     // Delete item from inventory: { page: number|string, thingId: string }
     const { page, thingId } = body as any;
 
@@ -2133,7 +2142,7 @@ const app = new Elysia()
       });
     }
 
-    const accountPath = await resolveAccountPath(cookie);
+    const accountPath = await getAccountPath();
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -2173,6 +2182,11 @@ const app = new Elysia()
 
     accountData.inventory = current;
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
+    
+    // Persist to profile file if there's an active profile
+    if (currentActiveProfile) {
+      await syncLegacyToProfile(currentActiveProfile);
+    }
 
     const personId = accountData.personId || "unknown";
     return new Response(JSON.stringify({ ok: true }), {
@@ -2186,7 +2200,7 @@ const app = new Elysia()
     }),
     type: "form"
   })
-  .post("/inventory/move", async ({ body, cookie }) => {
+  .post("/inventory/move", async ({ body }) => {
     // Move item within inventory: { fromPage: number|string, fromIndex: number, toPage: number|string, toIndex: number }
     const { fromPage, fromIndex, toPage, toIndex } = body as any;
 
@@ -2197,7 +2211,7 @@ const app = new Elysia()
       });
     }
 
-    const accountPath = await resolveAccountPath(cookie);
+    const accountPath = await getAccountPath();
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -2232,6 +2246,11 @@ const app = new Elysia()
 
     accountData.inventory = current;
     await fs.writeFile(accountPath, JSON.stringify(accountData, null, 2));
+    
+    // Persist to profile file if there's an active profile
+    if (currentActiveProfile) {
+      await syncLegacyToProfile(currentActiveProfile);
+    }
 
     const personId = accountData.personId || "unknown";
     return new Response(JSON.stringify({ ok: true }), {
@@ -2247,11 +2266,11 @@ const app = new Elysia()
     }),
     type: "form"
   })
-  .post("/inventory/update", async ({ body, cookie }) => {
+  .post("/inventory/update", async ({ body }) => {
     // Mirror /inventory/save behavior; some clients call update
     const invUpdate = body as any;
 
-    const accountPath = await resolveAccountPath(cookie);
+    const accountPath = await getAccountPath();
     let accountData: Record<string, any> = {};
     try {
       accountData = JSON.parse(await fs.readFile(accountPath, "utf-8"));
@@ -2327,6 +2346,11 @@ const app = new Elysia()
     const invPath = `${invDir}/${personId}.json`;
     await fs.mkdir(invDir, { recursive: true });
     await fs.writeFile(invPath, JSON.stringify(current, null, 2));
+    
+    // Persist to profile file if there's an active profile
+    if (currentActiveProfile) {
+      await syncLegacyToProfile(currentActiveProfile);
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
