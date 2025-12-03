@@ -2886,7 +2886,8 @@ const app = new Elysia()
     }
   }, {
     body: t.Object({
-      query: t.Optional(t.String()),
+      term: t.Optional(t.String()),  // Client sends "term"
+      query: t.Optional(t.String()), // Legacy/alternative field
       page: t.Optional(t.Number())
     })
   })
