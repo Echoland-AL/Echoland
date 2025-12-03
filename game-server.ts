@@ -625,6 +625,116 @@ const findAreaByUrlName = (areaUrlName: string) => {
   return areaByUrlName.get(areaUrlName)
 }
 
+// ==================== THING SEARCH INDEX ====================
+interface ThingIndexEntry {
+  id: string;
+  name: string;
+  tags: string[];
+}
+
+const thingIndex: ThingIndexEntry[] = [];
+const THING_INDEX_CACHE = "./cache/thingIndex.json";
+
+console.log("Building thing search index...");
+const thingCacheFile = Bun.file(THING_INDEX_CACHE);
+
+if (await thingCacheFile.exists()) {
+  console.log("Loading thing index from cache...");
+  try {
+    const cached = await thingCacheFile.json();
+    if (Array.isArray(cached)) {
+      thingIndex.push(...cached);
+      console.log(`✓ Loaded ${thingIndex.length} things from cache`);
+    } else {
+      throw new Error("Invalid cache format");
+    }
+  } catch (error) {
+    console.log("Thing cache invalid, rebuilding...");
+  }
+}
+
+if (thingIndex.length === 0) {
+  console.log("Scanning thing info files (this may take a while)...");
+  const infoDir = "./data/thing/info";
+  const tagsDir = "./data/thing/tags";
+  
+  try {
+    const files = await fs.readdir(infoDir);
+    const totalFiles = files.length;
+    let indexed = 0;
+    
+    console.log(`Found ${totalFiles} thing files to process...`);
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      // Progress logging every 5000 files (like area index)
+      if (i % 5000 === 0) {
+        const percent = ((i / totalFiles) * 100).toFixed(1);
+        console.log(`Indexed ${i}/${totalFiles} things (${percent}%)...`);
+      }
+      
+      if (!file.endsWith(".json")) continue;
+      
+      const thingId = path.basename(file, ".json");
+      
+      try {
+        const raw = await fs.readFile(path.join(infoDir, file), "utf-8");
+        const info = JSON.parse(raw);
+        
+        // Only index things that are placed and not unlisted
+        if (!info || typeof info !== "object") continue;
+        if (!(info.placedCount > 0) || info.isUnlisted === true) continue;
+        
+        const name = typeof info.name === "string" ? info.name.trim().toLowerCase() : "";
+        if (!name) continue;
+        
+        // Try to get tags
+        let tags: string[] = [];
+        try {
+          const tagsRaw = await fs.readFile(path.join(tagsDir, file), "utf-8");
+          const tagData = JSON.parse(tagsRaw);
+          if (Array.isArray(tagData.tags)) {
+            tags = tagData.tags.map((t: string) => t.toLowerCase());
+          }
+        } catch {
+          // No tags file
+        }
+        
+        thingIndex.push({ id: thingId, name, tags });
+        indexed++;
+      } catch {
+        // Skip invalid files
+      }
+    }
+    
+    console.log(`✓ Indexed ${indexed} searchable things out of ${totalFiles} total (100%)`);
+    
+    // Save to cache
+    await fs.mkdir("./cache", { recursive: true });
+    await Bun.write(THING_INDEX_CACHE, JSON.stringify(thingIndex));
+    console.log("✓ Thing index saved to cache");
+  } catch (err) {
+    console.error("Failed to build thing index:", err);
+  }
+}
+
+function searchThings(term: string, page: number = 0, itemsPerPage: number = 20): string[] {
+  const searchTerm = term.toLowerCase();
+  
+  const matches = thingIndex.filter(thing => {
+    if (searchTerm === "") return true;
+    if (thing.name.includes(searchTerm)) return true;
+    if (thing.tags.some(tag => tag.includes(searchTerm))) return true;
+    return false;
+  });
+  
+  const start = page * itemsPerPage;
+  return matches.slice(start, start + itemsPerPage).map(t => t.id);
+}
+
+// ==================== END THING SEARCH INDEX ====================
+
 // ✅ Inject default home area into arealist.json if not already present
 try {
   const account = JSON.parse(await fs.readFile("./data/person/account.json", "utf-8"));
@@ -2622,6 +2732,16 @@ const app = new Elysia()
       console.warn("⚠️ Could not update topby list:", e);
     }
 
+    // ✅ Update thing search index (so new things are immediately searchable)
+    if (name && thingInfo.placedCount > 0 && !thingInfo.isUnlisted) {
+      thingIndex.push({
+        id: thingId,
+        name: name.trim().toLowerCase(),
+        tags: []
+      });
+      console.log(`[THING INDEX] ✅ Added thing ${thingId} (${name}) to search index`);
+    }
+
     return new Response(JSON.stringify({ id: thingId }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -2792,6 +2912,13 @@ const app = new Elysia()
         }
       }
 
+      // ✅ Update thing search index with new name
+      const thingEntry = thingIndex.find(t => t.id === thingId);
+      if (thingEntry) {
+        thingEntry.name = newName.trim().toLowerCase();
+        console.log(`[THING INDEX] ✅ Updated thing ${thingId} name to "${newName}"`);
+      }
+
       return new Response(JSON.stringify({ ok: true, name: newName }), {
         status: 200,
         headers: { "Content-Type": "application/json" }
@@ -2809,81 +2936,26 @@ const app = new Elysia()
       newName: t.String()
     })
   })
-  // 🔍 Search for things by name or tag
+  // 🔍 Search for things by name or tag (uses pre-built index for speed)
   .post("/thing/search", async ({ body }) => {
     console.log("📥 /thing/search route triggered");
 
     // Client sends "term" field, not "query"
-    const searchTerm = typeof body.term === "string" ? body.term.trim().toLowerCase() : 
-                       (typeof body.query === "string" ? body.query.trim().toLowerCase() : "");
+    const searchTerm = typeof body.term === "string" ? body.term.trim() : 
+                       (typeof body.query === "string" ? body.query.trim() : "");
     const page = typeof body.page === "number" ? Math.max(0, body.page) : 0;
-    const itemsPerPage = 20;
 
     console.log(`📥 Received query: "${searchTerm}", page: ${page}`);
 
-    const matchedIds: string[] = [];
-    const infoDir = "./data/thing/info";
-    const tagsDir = "./data/thing/tags";
+    // Use cached index for fast search
+    const results = searchThings(searchTerm, page, 20);
+    
+    console.log(`🔎 Found ${results.length} results for "${searchTerm}" (page ${page})`);
 
-    try {
-      const infoFiles = await fs.readdir(infoDir);
-
-      for (const file of infoFiles) {
-        const thingId = path.basename(file, ".json");
-        let info: any;
-
-        try {
-          const raw = await fs.readFile(path.join(infoDir, file), "utf-8");
-          info = JSON.parse(raw);
-        } catch {
-          continue;
-        }
-
-        if (!info || typeof info !== "object") continue;
-
-        const isPlaced = info.placedCount > 0;
-        const isUnlisted = info.isUnlisted === true;
-        if (!isPlaced || isUnlisted) continue;
-
-        let displayName = typeof info.name === "string" ? info.name.trim().toLowerCase() : "thing";
-
-        const nameMatches = displayName.includes(searchTerm);
-        let tagMatches = false;
-
-        if (!nameMatches && searchTerm !== "") {
-          try {
-            const tagsRaw = await fs.readFile(path.join(tagsDir, `${thingId}.json`), "utf-8");
-            const tagData = JSON.parse(tagsRaw);
-            const tags = Array.isArray(tagData.tags) ? tagData.tags.map(t => t.toLowerCase()) : [];
-            tagMatches = tags.some(tag => tag.includes(searchTerm));
-          } catch {
-            tagMatches = false;
-          }
-        }
-
-        const shouldInclude = searchTerm === "" ? true : (nameMatches || tagMatches);
-        if (shouldInclude) {
-          matchedIds.push(thingId);
-        }
-      }
-
-      const start = page * itemsPerPage;
-      const paginatedIds = matchedIds.slice(start, start + itemsPerPage);
-
-      console.log(`🔎 Total matches: ${matchedIds.length}`);
-      console.log(`📦 Returning page ${page} → ${paginatedIds.length} items`);
-
-      return new Response(JSON.stringify({ ids: paginatedIds }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      });
-    } catch (err) {
-      console.error("❌ Failed to read info directory:", err);
-      return new Response(JSON.stringify({ ids: [] }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
+    return new Response(JSON.stringify({ ids: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
   }, {
     body: t.Object({
       term: t.Optional(t.String()),  // Client sends "term"
@@ -3053,6 +3125,29 @@ const app = new Elysia()
     }
 
     await fs.writeFile(filePath, JSON.stringify(thingData, null, 2));
+
+    // ✅ Update thing search index
+    const thingEntry = thingIndex.find(t => t.id === thingId);
+    if (updates.isUnlisted === true && thingEntry) {
+      // Remove from index if unlisted
+      const idx = thingIndex.indexOf(thingEntry);
+      if (idx !== -1) {
+        thingIndex.splice(idx, 1);
+        console.log(`[THING INDEX] ✅ Removed unlisted thing ${thingId} from search index`);
+      }
+    } else if (updates.name && thingEntry) {
+      // Update name in index
+      thingEntry.name = updates.name.trim().toLowerCase();
+      console.log(`[THING INDEX] ✅ Updated thing ${thingId} name in search index`);
+    } else if (!thingEntry && !thingData.isUnlisted && thingData.placedCount > 0) {
+      // Add to index if not there and not unlisted
+      thingIndex.push({
+        id: thingId,
+        name: (thingData.name || "").trim().toLowerCase(),
+        tags: []
+      });
+      console.log(`[THING INDEX] ✅ Added thing ${thingId} to search index`);
+    }
 
     return new Response(JSON.stringify({ ok: true, updated: thingData }), {
       status: 200,
