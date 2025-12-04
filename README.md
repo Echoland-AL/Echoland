@@ -39,6 +39,8 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 
 ## Looking to Just Play?
 
+'The REnyland server is currently under maintenance so anything I say below will have it's purpose when the server is up again, to see the status for the Renyland Server you can check it at : renyland.fr'
+
 If you're looking for a more functional server just to play the game, check out **REnyland**, a server I helped beta test. All server-side work was done by the creator Axsys.
 
 REnyland is not open source (yet) as it’s still being finalized. Echoland is offered as an alternative for those who want to tinker, explore, or build their own thing.
