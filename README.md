@@ -43,7 +43,7 @@ If you're looking for a more functional server just to play the game, check out 
 
 REnyland is not open source (yet) as it’s still being finalized. It is a central server that you need to connect to. Echoland is offered as an alternative for those who want to tinker, explore, or build their own thing.
 
-*The REnyland server is currently under maintenance so anything I say up there will make sense when the server is up again, to see the status go to : renyland.fr*
+*The REnyland server is accessible here : renyland.fr*
 
 
 ---
