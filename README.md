@@ -90,6 +90,9 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 
 ## Setup & Running
 
+[Echoland An Open Source Dedicated Server For Anyland](https://www.youtube.com/watch?v=1C4PxRaJKa8&t)
+[Announcing Echoland, Multiplayer Friendly And Now With Thing Search Function](https://www.youtube.com/watch?v=NXHnGRGA-GU)
+
 ### 1. Install Docker
 
 Get started here: [https://www.docker.com/get-started](https://www.docker.com/get-started)
