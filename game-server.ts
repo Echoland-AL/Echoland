@@ -36,6 +36,9 @@ const LEGACY_ACCOUNT_PATH = "./data/person/account.json";
 // Track the currently active profile (for Unity clients that don't send cookies)
 let currentActiveProfile: string | null = null;
 
+// Track the next client profile to auto-assign
+let nextClientProfile: string | null = null;
+
 function getAccountPathForProfile(profileName: string): string {
   return `${ACCOUNTS_DIR}/${profileName}.json`;
 }
@@ -236,10 +239,10 @@ async function initDefaults() {
   const areaId = accountData.homeAreaId;
   const areaName = `${accountData.screenName}'s home`;
   const areaKey = `rr${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
-  const bundleFolder = `./data/area/bundle/${areaId}`;
-  await fs.mkdir(bundleFolder, { recursive: true });
-  const bundlePath = `${bundleFolder}/${areaKey}.json`;
-  await fs.writeFile(bundlePath, JSON.stringify({ thingDefinitions: [], serveTime: 0 }, null, 2));
+  const initDefaultsBundleFolder = `./data/area/bundle/${areaId}`;
+  await fs.mkdir(initDefaultsBundleFolder, { recursive: true });
+  const initDefaultsBundlePath = `${initDefaultsBundleFolder}/${areaKey}.json`;
+  await fs.writeFile(initDefaultsBundlePath, JSON.stringify({ thingDefinitions: [], serveTime: 0 }, null, 2));
   const subareaPath = `./data/area/subareas/${areaId}.json`;
   await fs.writeFile(subareaPath, JSON.stringify({ subareas: [] }, null, 2));
 
@@ -303,7 +306,12 @@ async function initDefaults() {
 
   await fs.writeFile(`./data/area/info/${areaId}.json`, JSON.stringify(areaInfo, null, 2));
   await fs.writeFile(`./data/area/load/${areaId}.json`, JSON.stringify(areaLoad, null, 2));
-  await fs.writeFile(`./data/area/bundle/${areaId}.json`, JSON.stringify(areaBundle, null, 2));
+
+  // Create bundle in subfolder with proper structure: bundle/{areaId}/{bundleKey}.json
+  const ensureHomeAreaBundleFolder = `./data/area/bundle/${areaId}`;
+  await fs.mkdir(ensureHomeAreaBundleFolder, { recursive: true });
+  const ensureHomeAreaBundlePath = `${ensureHomeAreaBundleFolder}/${areaKey}.json`;
+  await fs.writeFile(ensureHomeAreaBundlePath, JSON.stringify(areaBundle, null, 2));
 
   console.log(`🌍 Created default home area for ${accountData.screenName}`);
 }
@@ -387,10 +395,10 @@ async function ensureHomeArea(account: Record<string, any>) {
   const areaName = `${account.screenName}'s home`;
   const areaKey = `rr${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
-  const bundleFolder = `./data/area/bundle/${areaId}`;
-  await fs.mkdir(bundleFolder, { recursive: true });
-  const bundlePath = `${bundleFolder}/${areaKey}.json`;
-  await fs.writeFile(bundlePath, JSON.stringify({ thingDefinitions: [], serveTime: 0 }, null, 2));
+  const setupClientProfileBundleFolder = `./data/area/bundle/${areaId}`;
+  await fs.mkdir(setupClientProfileBundleFolder, { recursive: true });
+  const setupClientProfileBundlePath = `${setupClientProfileBundleFolder}/${areaKey}.json`;
+  await fs.writeFile(setupClientProfileBundlePath, JSON.stringify({ thingDefinitions: [], serveTime: 0 }, null, 2));
   const subareaPath = `./data/area/subareas/${areaId}.json`;
   await fs.writeFile(subareaPath, JSON.stringify({ subareas: [] }, null, 2));
 
@@ -454,7 +462,12 @@ async function ensureHomeArea(account: Record<string, any>) {
 
   await fs.writeFile(`./data/area/info/${areaId}.json`, JSON.stringify(areaInfo, null, 2));
   await fs.writeFile(`./data/area/load/${areaId}.json`, JSON.stringify(areaLoad, null, 2));
-  await fs.writeFile(`./data/area/bundle/${areaId}.json`, JSON.stringify(areaBundle, null, 2));
+
+  // Create bundle in subfolder with proper structure: bundle/{areaId}/{bundleKey}.json
+  const createAreaBundleFolder = `./data/area/bundle/${areaId}`;
+  await fs.mkdir(createAreaBundleFolder, { recursive: true });
+  const createAreaBundlePath = `${createAreaBundleFolder}/${areaKey}.json`;
+  await fs.writeFile(createAreaBundlePath, JSON.stringify(areaBundle, null, 2));
 
   await injectInitialAreaToList(areaId, areaName);
 
@@ -806,6 +819,20 @@ const app = new Elysia()
       ? profiles.map((p) => `<span class="profile-tag">${p}</span>`).join("")
       : `<div class="empty">No profiles yet.</div>`;
 
+    const nextProfileHtml = nextClientProfile
+      ? `<div style="margin: 12px 0; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 6px;">
+          <strong>Next Client Profile:</strong> ${nextClientProfile}
+          <a href="/admin/clear-next-profile" style="color: #dc2626; margin-left: 12px; text-decoration: none;">[Clear]</a>
+         </div>`
+      : `<form class="inline" action="/admin/set-next-profile" method="GET" style="margin: 12px 0; padding: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px;">
+          <strong>Set next client profile:</strong>
+          <select name="profile" style="margin: 0 8px;">
+            <option value="">Select profile</option>
+            ${profiles.map((p) => `<option value="${p}" ${nextClientProfile === p ? 'selected' : ''}>${p}</option>`).join("")}
+          </select>
+          <button type="submit">Set for Next Client</button>
+         </form>`;
+
     const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -846,6 +873,7 @@ const app = new Elysia()
         <input type="text" name="name" placeholder="New profile name" required />
         <button type="submit">Create</button>
       </form>
+      ${nextProfileHtml}
     </div>
   </div>
   <script>
@@ -941,6 +969,23 @@ const app = new Elysia()
       name: t.Optional(t.String())
     })
   })
+  .get("/admin/set-next-profile", async ({ query }) => {
+    const profileName = (query.profile || "").trim();
+    if (profileName) {
+      nextClientProfile = profileName;
+      console.log(`[ADMIN] Set next client profile to: ${profileName}`);
+    }
+    return Response.redirect("/admin", 302);
+  }, {
+    query: t.Object({
+      profile: t.Optional(t.String())
+    })
+  })
+  .get("/admin/clear-next-profile", async () => {
+    nextClientProfile = null;
+    console.log(`[ADMIN] Cleared next client profile`);
+    return Response.redirect("/admin", 302);
+  })
   .get("/api/profiles", async () => {
     const profiles = await listProfiles();
     return new Response(JSON.stringify({ profiles }), {
@@ -1005,14 +1050,21 @@ const app = new Elysia()
         (body && typeof body === "object" && "profile" in body ? (body as any).profile : null) ||
         null;
 
-      // If no profile specified, wait for admin to assign one
+      // If no profile specified, check if there's a pre-selected profile for next client
       if (!profileName) {
-        const clientId = `client-${++pendingClientCounter}`;
-        console.log(`[AUTH] New client awaiting profile selection (client ${clientId})`);
-        profileName = await new Promise<string>((resolve) => {
-          pendingClients.push({ id: clientId, resolve, timestamp: new Date() });
-          notifyPendingChange();
-        });
+        if (nextClientProfile) {
+          console.log(`[AUTH] Auto-assigning pre-selected profile: ${nextClientProfile}`);
+          profileName = nextClientProfile;
+          nextClientProfile = null; // Clear after use
+        } else {
+          // Wait for admin to assign one
+          const clientId = `client-${++pendingClientCounter}`;
+          console.log(`[AUTH] New client awaiting profile selection (client ${clientId})`);
+          profileName = await new Promise<string>((resolve) => {
+            pendingClients.push({ id: clientId, resolve, timestamp: new Date() });
+            notifyPendingChange();
+          });
+        }
       }
 
       // If there was a previous active profile, save its data first
@@ -1336,6 +1388,43 @@ const app = new Elysia()
     },
     { body: t.Object({ areaId: t.String() }) }
   )
+  .get("/area/random", async () => {
+    try {
+      // Get all available areas from the index
+      if (areaIndex.length === 0) {
+        return new Response(JSON.stringify({
+          ok: false,
+          error: "No areas available"
+        }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      // Pick a random area
+      const randomIndex = Math.floor(Math.random() * areaIndex.length);
+      const randomArea = areaIndex[randomIndex];
+
+      console.log(`[AREA RANDOM] Selected area: ${randomArea.name} (${randomArea.id})`);
+
+      // Return area info in the format expected by the client
+      return {
+        areaId: randomArea.id,
+        areaName: randomArea.name,
+        areaUrlName: randomArea.name.replace(/[^-_a-z0-9]/gi, "").toLowerCase(),
+        ok: true
+      };
+    } catch (error) {
+      console.error("[AREA RANDOM] Error:", error);
+      return new Response(JSON.stringify({
+        ok: false,
+        error: "Failed to get random area"
+      }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  })
   .post("/area/save",
     async ({ body }) => {
       const areaId = body.id || generateObjectId();
