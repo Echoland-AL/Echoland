@@ -1306,27 +1306,54 @@ const app = new Elysia()
         const filePath = path.resolve("./data/area/load/", areaId + ".json");
         const file = Bun.file(filePath);
         console.log(`[AREA LOAD] Checking file: ${filePath}`);
-        
+
         if (await file.exists()) {
           try {
             const areaData = await file.json();
             console.log(`[AREA LOAD] ✅ Successfully loaded area ${areaId} (${areaData.areaName || 'unnamed'})`);
-            
+
             // Also verify the bundle exists
             const bundlePath = path.resolve("./data/area/bundle/", areaId, (areaData.areaKey || '') + ".json");
             const bundleFile = Bun.file(bundlePath);
             const bundleExists = await bundleFile.exists();
             console.log(`[AREA LOAD] Bundle ${areaData.areaKey} exists: ${bundleExists}`);
-            
+
+            // Check if current user has edit permissions
+            let hasEditPermission = false;
+            let isOwner = false;
+
+            try {
+              // Load area info to check editors
+              const areaInfoPath = path.resolve("./data/area/info/", areaId + ".json");
+              const areaInfoFile = Bun.file(areaInfoPath);
+              if (await areaInfoFile.exists()) {
+                const areaInfo = await areaInfoFile.json();
+                // Load current user account
+                const accountPath = "./data/person/account.json";
+                const account = JSON.parse(await fs.readFile(accountPath, "utf-8"));
+                const currentUserId = account.personId;
+
+                // Check if user is in editors list
+                hasEditPermission = areaInfo.editors?.some((editor: any) => editor.id === currentUserId) || false;
+                isOwner = areaInfo.editors?.some((editor: any) => editor.id === currentUserId && editor.isOwner) || false;
+
+                console.log(`[AREA LOAD] User ${currentUserId} has edit permission: ${hasEditPermission}, is owner: ${isOwner}`);
+              } else {
+                console.warn(`[AREA LOAD] Area info file not found for ${areaId}, defaulting to no edit permission`);
+              }
+            } catch (err) {
+              console.warn(`[AREA LOAD] Could not check edit permissions for area ${areaId}:`, err);
+            }
+
             return {
               ...areaData,
-              forceEditMode: true,
-              requestorIsEditor: true,
-              requestorIsListEditor: true,
-              requestorIsOwner: true,
-              hasEditTools: true,
-              hasEditToolsPermanently: true,
-              editToolsExpiryDate: null,
+              forceEditMode: hasEditPermission,
+              requestorIsEditor: hasEditPermission,
+              requestorIsListEditor: hasEditPermission,
+              requestorIsOwner: isOwner,
+              hasEditTools: hasEditPermission,
+              hasEditToolsPermanently: hasEditPermission,
+              editToolsExpiryDate: hasEditPermission ? null : undefined,
               isInEditToolsTrial: false,
               wasEditToolsTrialEverActivated: false
             };
