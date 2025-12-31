@@ -94,9 +94,18 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 
 [Announcing Echoland, Multiplayer Friendly And Now With Thing Search Function](https://www.youtube.com/watch?v=NXHnGRGA-GU)
 
-### 1. Install Docker
+### 1. Choose Your Installation Method
 
-Get started here: [https://www.docker.com/get-started](https://www.docker.com/get-started)
+**Echoland can run in two ways:**
+
+#### Option A: Docker (Recommended for beginners)
+- **Windows/Linux**: Install Docker from [https://www.docker.com/get-started](https://www.docker.com/get-started)
+- Click **"Start-Server Docker.bat"** to start both services automatically
+
+#### Option B: Direct Installation (Advanced users)
+- **Windows**: Install [Bun](https://bun.sh/) runtime and download [Caddy](https://caddyserver.com/) web server
+- **Linux**: Run `./install-and-run.sh` to install Bun and start the server
+- Click **"Start-Server.bat"** (Windows) or use the launch scripts to start both game server (Bun) and web server (Caddy)
 
 ---
 
@@ -141,19 +150,26 @@ Extract the `data.zip` contents into your Echoland server folder named `data`.
 
 ### 4. Start the Server
 
-Steps:
+#### If using Docker (Option A):
+1. Double-click **"Start-Server Docker.bat"**
+2. Choose option **1** (Start Server) from the menu
+3. Wait for both areas and things indexing to complete
+4. Choose option **6** to view server logs if needed
+5. Open `Echoland-Admin.html` or visit [http://localhost:8000/admin](http://localhost:8000/admin)
 
-1. Run Docker  
-2. Run `start-server.bat` directly  
-3. Choose **Start Server (1)** and wait for both areas and things indexing  
-4. Choose **6** to see the server logs  
-5. Wait for indexing to finish  
-6. Open `Echoland-Admin.html` or visit [http://localhost:8000/admin](http://localhost:8000/admin)  
-7. Create names and profiles here  
-8. Start the game, then refresh the admin page to show the pending client and assign it to the corresponding profile  
-9. You’re playing the game—enjoy!
+#### If using Direct Installation (Option B):
+1. **Windows**: Double-click **"Start-Server.bat"** (starts both Bun game server and Caddy web server)
+2. **Linux**: Run `./launch-server-linux.sh` to start the game server and `./launch-anyland-linux.sh` for the full setup
+3. Wait for indexing to complete
+4. Visit [http://localhost:8000/admin](http://localhost:8000/admin) for the admin panel
 
-**Tip:** Create a shortcut to the `.bat` file for quick access.  
-The first launch may take time while the area index/things loads. After that, it will cache and start instantly next time.
+#### Final Setup Steps (for both options):
+1. In the admin panel, create user profiles
+2. Start the Anyland game client
+3. Refresh the admin page to see pending connections
+4. Assign profiles to connected clients
+5. You're playing—enjoy!
+
+**Tip:** The first launch takes time while indexing areas and things. Subsequent launches will be much faster. Create a shortcut to your preferred `.bat` file for quick access.
 
 ---
