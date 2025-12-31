@@ -164,11 +164,12 @@ Extract the `data.zip` contents into your Echoland server folder named `data`.
 4. Visit [http://localhost:8000/admin](http://localhost:8000/admin) for the admin panel
 
 #### Final Setup Steps (for both options):
-1. In the admin panel, create user profiles
-2. Start the Anyland game client
-3. Refresh the admin page to see pending connections
-4. Assign profiles to connected clients
-5. You're playing—enjoy!
+In the admin panel, create user profiles  
+Start the Anyland game client  
+Refresh the admin page to see pending connections  
+Assign profiles to connected clients  
+Optional: You can also pre-assign a profile for the next connecting client in advance using the "Set Next Profile" feature  
+You're playing—enjoy!
 
 **Tip:** The first launch takes time while indexing areas and things. Subsequent launches will be much faster. Create a shortcut to your preferred `.bat` file for quick access.
 
