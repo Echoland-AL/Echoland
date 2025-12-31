@@ -1,14 +1,16 @@
 @echo off
-REM === Base folder is where this batch file lives ===
 set BASE=%~dp0
 
-REM === Start Caddy (expects caddy.exe and Caddyfile in a subfolder called CADDY) ===
-start "Caddy" cmd /c "%BASE%CADDY\caddy.exe run --config %BASE%CADDY\Caddyfile"
+REM Kill any leftovers
+taskkill /F /IM caddy.exe >nul 2>&1
+taskkill /F /IM bun.exe >nul 2>&1
 
-REM === Start Bun game server (expects server files in a subfolder called Echoland) ===
-cd /d "%BASE%Echoland"
-start "GameServer" cmd /c "bun start"
+REM Start Caddy visibly
+start "" "%BASE%CADDY\caddy.exe" run --config "%BASE%CADDY\Caddyfile"
 
-REM === Keep launcher window open ===
+REM Start Bun server
+cd /d "%BASE%"
+start "" bun start
+
 echo Caddy and Bun server started. Press any key to close this launcher...
 pause >nul
