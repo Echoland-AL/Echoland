@@ -79,7 +79,7 @@ const PORT_CDN_AREABUNDLES = Number(Bun.env.PORT_CDN_AREABUNDLES ?? 8002);
 const PORT_CDN_UGCIMAGES = Number(Bun.env.PORT_CDN_UGCIMAGES ?? 8003);
 
 const getDynamicAreaList = async () => {
-  const arealistPath = "/app/data/area/arealist.json";
+  const arealistPath = "./data/area/arealist.json";
   try {
     const file = Bun.file(arealistPath);
     if (await file.exists()) {
@@ -2001,7 +2001,7 @@ const app = new Elysia()
     const { areaId, name } = body;
     if (!areaId || !name) return new Response("Missing data", { status: 400 });
 
-    const listPath = "/app/data/area/arealist.json";
+    const listPath = "./data/area/arealist.json";
     const areaList = await getDynamicAreaList();
     const alreadyVisited = areaList.visited.some(a => a.id === areaId);
 
