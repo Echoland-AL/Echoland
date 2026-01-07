@@ -1501,7 +1501,7 @@ const app = new Elysia()
   )
   .post(
     "/area/search",
-    async ({ body: { term, byCreatorId } }) => {
+    async ({ body: { term, byCreatorId, byCreatorName } }) => {
       if (byCreatorId) {
         const file = Bun.file(path.resolve("./data/person/areasearch/", byCreatorId + ".json"))
 
@@ -1510,6 +1510,76 @@ const app = new Elysia()
         }
         else {
           return { areas: [], ownPrivateAreas: [] }
+        }
+      }
+      else if (byCreatorName) {
+        // Search by username using byCreatorName parameter
+        const username = byCreatorName.trim();
+
+        // Find user ID by searching through person info files
+        try {
+          const infoDir = "./data/person/info/";
+          const files = await fs.readdir(infoDir);
+
+          for (const file of files) {
+            if (file.endsWith('.json')) {
+              const filePath = path.join(infoDir, file);
+              const userData = await Bun.file(filePath).json();
+
+              if (userData.screenName && userData.screenName.toLowerCase() === username.toLowerCase()) {
+                // Found the user, now search for their areas
+                const areaFile = Bun.file(path.resolve("./data/person/areasearch/", userData.id + ".json"));
+
+                if (await areaFile.exists()) {
+                  return await areaFile.json();
+                }
+                else {
+                  return { areas: [], ownPrivateAreas: [] };
+                }
+              }
+            }
+          }
+
+          // User not found
+          return { areas: [], ownPrivateAreas: [] };
+        } catch (error) {
+          console.error("Error searching for user by username:", error);
+          return { areas: [], ownPrivateAreas: [] };
+        }
+      }
+      else if (term.toLowerCase().startsWith("by ")) {
+        // Search by username - extract username after "by "
+        const username = term.slice(3).trim();
+
+        // Find user ID by searching through person info files
+        try {
+          const infoDir = "./data/person/info/";
+          const files = await fs.readdir(infoDir);
+
+          for (const file of files) {
+            if (file.endsWith('.json')) {
+              const filePath = path.join(infoDir, file);
+              const userData = await Bun.file(filePath).json();
+
+              if (userData.screenName && userData.screenName.toLowerCase() === username.toLowerCase()) {
+                // Found the user, now search for their areas
+                const areaFile = Bun.file(path.resolve("./data/person/areasearch/", userData.id + ".json"));
+
+                if (await areaFile.exists()) {
+                  return await areaFile.json();
+                }
+                else {
+                  return { areas: [], ownPrivateAreas: [] };
+                }
+              }
+            }
+          }
+
+          // User not found
+          return { areas: [], ownPrivateAreas: [] };
+        } catch (error) {
+          console.error("Error searching for user by username:", error);
+          return { areas: [], ownPrivateAreas: [] };
         }
       }
       else {
@@ -1522,7 +1592,7 @@ const app = new Elysia()
       }
 
     },
-    { body: t.Object({ term: t.String(), byCreatorId: t.Optional(t.String()) }) }
+    { body: t.Object({ term: t.String(), byCreatorId: t.Optional(t.String()), byCreatorName: t.Optional(t.String()) }) }
   )
   .post("/user/setName", async ({ body }) => {
     const { newName } = body;
@@ -3450,13 +3520,14 @@ const areaFolder = "./data/area/info/";
 let debounceTimer;
 
 watch(areaFolder, { recursive: true }, (eventType, filename) => {
-  console.log(`[Area Watcher] Detected ${eventType} on ${filename}`);
-
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(async () => {
-    console.log("[Area Watcher] Rebuilding area index...");
-    await rebuildAreaIndex(); // Make sure this function exists
-  }, 1000); // Wait 1 second after last change
+  // Only log if it's a relevant change (not just access events)
+  if (eventType === 'change' && filename && filename.endsWith('.json')) {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(async () => {
+      console.log("[Area Watcher] Rebuilding area index due to file changes...");
+      await rebuildAreaIndex();
+    }, 1000); // Wait 1 second after last change
+  }
 });
 
 import { readdir, readFile } from "fs/promises";
