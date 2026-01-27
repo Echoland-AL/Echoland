@@ -22,6 +22,18 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 
 ---
 
+# Echoland — Open-Source, Self-Hostable Anyland Server
+
+Echoland is an **open-source replacement server for the game Anyland**.
+It allows anyone to **self-host their own Anyland server** after the official servers were shut down.
+
+Echoland is designed to be:
+- Fully self-hostable
+- Open source
+- Independent of centralized infrastructure
+
+This project exists to preserve Anyland and keep it playable long-term.
+
 ## Current Features
 
 - Create areas and build items  
