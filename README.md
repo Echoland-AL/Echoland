@@ -1,6 +1,6 @@
 # Echoland — Open-Source, Self-Hostable Anyland Server
 
-Echoland is an **open-source replacement server for the game Anyland** created by **Gamedrix**.
+Echoland is an **open-source replacement server created by Gamedrix for the game Anyland**.
 It allows anyone to **self-host their own Anyland server** after the official servers were shut down.
 
 Echoland is designed to be:
