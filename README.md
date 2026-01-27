@@ -19,7 +19,7 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 ## Current Features
 
 - Create areas and build items  
-- Multiplayer-friendly server (semi-multiplayer)  
+- Multiplayer-friendly server (fully multiplayer with BUN)  
 - Multi-user support with a web-based interface to manage profiles  
 - Inventory system with body attachments  
 - Access to the entire archive (Areas and Things)  
