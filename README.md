@@ -24,8 +24,8 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 - Inventory system with body attachments  
 - Access to the entire archive (Areas and Things)  
 - Search archived items by name in the inventory  
-- Area features working  
-- Actively in development and open for community contributions  
+- Area features working
+- Pretty much the majority of the functionalities work
 
 *Note: PUN (Photon Unity Networking) is not yet implemented, but can be added easily if desired.*
 
@@ -33,9 +33,11 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 
 ## Looking to Just Play?
 
-If you're looking for a more functional server just to play the game, check out **REnyland**, a server I helped beta test. All server-side work was done by the creator Axsys.
+If you’re just looking to play the game, there’s a central server you can join so you don’t need to set anything up. Check out REnyland, a server I helped beta test. All the server‑side work was done by its creator, Axsys.
 
-REnyland isn’t open source (yet) as it’s still being finalized. It runs as a central server that you connect to. Echoland, on the other hand, is offered as an alternative for those who want to tinker, host their own server, or keep their data stored locally.
+REnyland is a completely different project. Its goal is to bring players together and make things as easy as possible with a launcher. It’s not open source and it’s fully controlled by Axsys. Your profile will be saved and preserved if you’re using the Steam version of the game, but if you’re on a non‑Steam Goldberg Anyland client, your profile won’t be portable, so keep that in mind until he implements something on his end.
+
+Echoland, on the other hand, is an alternative for people who want to tinker, host their own server, or keep their data stored locally. Profiles are kept in the “serverfolder”/data/person/accounts directory and everything is managed through a web interface that you set up yourself. This is so you fully understand how both servers work and choose what fits you best.
 
 [The REnyland server is accessible here](https://www.renyland.fr/)
 
