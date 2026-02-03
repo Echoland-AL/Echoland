@@ -1,20 +1,14 @@
+# Echoland — Open-Source, Self-Hostable Anyland Server
 
----
+Echoland is an **open-source replacement server created by Gamedrix for the game Anyland**.
+It allows anyone to **self-host their own Anyland server** after the official servers were shut down.
 
-# Echoland
+Echoland is designed to be:
+- Fully self-hostable
+- Open source
+- Independent of centralized infrastructure
 
-**Echoland** is a server for the defunct VR creation platform Anyland.
-
----
-
-## About
-
-Echoland is a community project built by gamedrix, based on:
-
-- The archiver work by Zetaphor and Cyel  
-- The skeleton game server originally created by Cyel
-
-Since I’m still getting familiar with Git, I’ve created a separate repo with a simple Docker-based setup so anyone can run the server locally.
+This project exists to preserve Anyland and keep it playable long-term.
 
 This is a community-driven effort. I started this with the goal of creating an open-source, writable archive. I’m not a trained developer, just someone diving in and learning as I go. The goal is to give the community a solid foundation to build their own servers, fully customizable and free to modify however you like.
 
@@ -25,13 +19,13 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 ## Current Features
 
 - Create areas and build items  
-- Multiplayer-friendly server (semi-multiplayer)  
+- Multiplayer-friendly server (fully multiplayer with PUN)  
 - Multi-user support with a web-based interface to manage profiles  
 - Inventory system with body attachments  
 - Access to the entire archive (Areas and Things)  
 - Search archived items by name in the inventory  
-- Area features working  
-- Actively in development and open for community contributions  
+- Area features working
+- Pretty much the majority of the functionalities work
 
 *Note: PUN (Photon Unity Networking) is not yet implemented, but can be added easily if desired.*
 
@@ -39,9 +33,11 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 
 ## Looking to Just Play?
 
-If you're looking for a more functional server just to play the game, check out **REnyland**, a server I helped beta test. All server-side work was done by the creator Axsys.
+If you’re just looking to play the game, there’s a central server you can join so you don’t need to set anything up. Check out REnyland, a server I helped beta test. All the server‑side work was done by its creator, Axsys.
 
-REnyland isn’t open source (yet) as it’s still being finalized. It runs as a central server that you connect to. Echoland, on the other hand, is offered as an alternative for those who want to tinker, host their own server, or keep their data stored locally.
+REnyland is a completely different project. Its goal is to bring players together and make things as easy as possible with a launcher. It’s not open source and it’s fully controlled by Axsys. Your profile will be saved and preserved if you’re using the Steam version of the game, but if you’re on a non‑Steam Goldberg Anyland client, your profile won’t be portable, so keep that in mind until he implements something on his end.
+
+Echoland, on the other hand, is an alternative for people who want to tinker, host their own server, or keep their data stored locally. Profiles are kept in the “serverfolder”/data/person/accounts directory and everything is managed through a web interface that you set up yourself. This is so you fully understand how both servers work and choose what fits you best.
 
 [The REnyland server is accessible here](https://www.renyland.fr/)
 
