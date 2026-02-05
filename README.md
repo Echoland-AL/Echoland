@@ -12,7 +12,7 @@ This project exists to preserve Anyland and keep it playable long-term.
 
 This is a community-driven effort. I started this with the goal of creating an open-source, writable archive. I’m not a trained developer, just someone diving in and learning as I go. The goal is to give the community a solid foundation to build their own servers, fully customizable and free to modify however you like.
 
-That server is based on another community effort made from Zetaphor And Cyel which is the full archive of all creations/areas in a [read-only server called anyland-archive redux](https://github.com/theneolanders/anyland-archive-redux) that I used to make all of this possible.
+That server is based on another community effort made by Zetaphor And Cyel which is the full archive of all creations/areas in a [read-only server called anyland-archive redux](https://github.com/theneolanders/anyland-archive-redux) that I used to make all of this possible.
 
 It's safe to say that now, Anyland will live on—endlessly, openly, and forever in the hands of its community.
 
