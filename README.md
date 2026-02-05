@@ -118,7 +118,7 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 Download the client:  
 [Client Only](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link)
 
-Download the images folder (if using the non-Steam client):  
+Download the images folder (if you the archived images from steam artwork):  
 [Images Folder (Google Drive)](https://drive.google.com/file/d/1RbCZvx0SJK9oaLEhfDAfSgdZJKgmGxAU/view?usp=drive_link)
 
 Place the images folder inside the main Echoland directory.
