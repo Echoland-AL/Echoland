@@ -107,7 +107,7 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 
 ### 2. Configure Hosts File
 
-#### Add these to *C:\Windows\System32\drivers\etc* :
+#### Add these to *C:\Windows\System32\drivers\etc\hosts* :
 ```plaintext
 127.0.0.1 app.anyland.com
 127.0.0.1 d6ccx151yatz6.cloudfront.net
