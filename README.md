@@ -9,7 +9,9 @@ Since the game was niche and never got the attention it deserved, it didn’t ge
 
 Thankfully, some amazing people managed to capture data from the game before it closed. Zetaphor, Cyel, and others published an archive that lets you “play” the game on a read‑only server called anyland‑archive redux. You can visit everything, but you can’t create or change anything. Still, most of the heavy lifting was done, and since the game was open source, someone just had to take over and make it writable again.
 
-That’s where I came in. I made the server writable and functional like the original one. With the Echoland server, you can play the game again and enjoy it just like before. The best part is that you now have your own copy of the server. If you run it on your computer, it becomes your personal Anyland. It supports multiplayer with PUN, and I’ll add the BepInEx mod, so for a local setup it’s very easy to play with someone at home. And if you’re a bit more technical, you can even set up remote access to your server if you’re tech‑savvy.
+That’s where I came in. I made the server writable and functional like the original one. With the Echoland server, you can play the game again and enjoy it just like before. The best part is that you now have your own copy of the server. If you run it on your computer, it becomes your personal Anyland.
+
+It supports multiplayer with PUN, and I’ll add the BepInEx mod, so for a local setup it’s very easy to play with someone at home. And if you’re a bit more technical, you can even set up remote access to your server if you’re tech‑savvy.
 
 Echoland is designed to be:
 - Fully self-hostable
