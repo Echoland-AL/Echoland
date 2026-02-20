@@ -1,7 +1,12 @@
 # Echoland — Open-Source, Self-Hostable Anyland Server
 
 Echoland is an **open-source replacement server created by Gamedrix for the game Anyland**.
-It allows anyone to **self-host their own Anyland server** after the official servers were shut down.
+It allows anyone to **self-host their own Anyland server** after the official servers were shut down, so now you can play the game again.
+
+Anyland is an online pure sandbox VR social game that came out on Steam on October 6th, 2016. It’s an amazing game where you can create everything with your own hands, from your world to your avatar to any objects you want. You can still find videos of it on YouTube. The game’s client was fully dependent on a central server, so everything you created or did in‑game was stored there. It also handled all your data, your info, your profile, everything.
+Since the game was niche and never got the attention it deserved, it didn’t get the financial support needed to keep the server running. It even went free for a while, which didn’t help. Because of that, in February 2024, the server shut down. And since the game needed that server to run at all, we basically lost access to the game for good.
+Thankfully, some amazing people managed to capture data from the game before it closed. Zetaphor, Cyel, and others published an archive that lets you “play” the game on a read‑only server called anyland‑archive redux. You can visit everything, but you can’t create or change anything. Still, most of the heavy lifting was done, and since the game was open source, someone just had to take over and make it writable again.
+That’s where I came in. I made the server writable and functional like the original one. With the Echoland server, you can play the game again and enjoy it just like before. The best part is that you now have your own copy of the server. If you run it on your computer, it becomes your personal Anyland. It supports multiplayer with PUN, and I’ll add the BepInEx mod, so for a local setup it’s very easy to play with someone at home. And if you’re a bit more technical, you can even set up remote access to your server if you’re tech‑savvy.
 
 Echoland is designed to be:
 - Fully self-hostable
