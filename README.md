@@ -7,7 +7,7 @@ Anyland is an online pure sandbox VR social game that came out on Steam on Octob
 
 Since the game was niche and never got the attention it deserved, it didn’t get the financial support needed to keep the server running. It even went free for a while, which didn’t help. Because of that, in February 2024, the server shut down. And since the game needed that server to run at all, we basically lost access to the game for good.
 
-Thankfully, some amazing people managed to capture data from the game before it closed. Zetaphor, Cyel, and others published an archive that lets you “play” the game on a read‑only server called anyland‑archive redux. You can visit everything, but you can’t create or change anything. Still, most of the heavy lifting was done, and since the game was open source, someone just had to take over and make it writable again.
+Thankfully, some amazing people managed to capture data from the game before it closed. Zetaphor, Cyel, and others published an archive that lets you “play” the game on a read‑only server called anyland‑archive redux. You can visit everything, but you can’t create or change anything. Still, most of the heavy lifting was done, and since the repo was open source, someone just had to take over and make it writable again.
 
 That’s where I came in. I made the server writable and functional like the original one. With the Echoland server, you can play the game again and enjoy it just like before. The best part is that you now have your own copy of the server. If you run it on your computer, it becomes your personal Anyland.
 
