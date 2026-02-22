@@ -39,7 +39,6 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 - Area features working
 - Pretty much the majority of the functionalities work
 
-*Note: PUN (Photon Unity Networking) is not yet implemented, but can be added easily if desired.*
 
 ---
 
