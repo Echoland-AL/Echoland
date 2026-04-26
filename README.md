@@ -1,7 +1,17 @@
 # Echoland — Open-Source, Self-Hostable Anyland Server
 
 Echoland is an **open-source replacement server created by Gamedrix for the game Anyland**.
-It allows anyone to **self-host their own Anyland server** after the official servers were shut down.
+It allows anyone to **self-host their own Anyland server** after the official servers were shut down, so now you can play the game again.
+
+Anyland is an online pure sandbox VR social game that came out on Steam on October 6th, 2016. It’s an amazing game where you can create everything with your own hands, from your world to your avatar to any objects you want. You can still find videos of it on YouTube. The game’s client was fully dependent on a central server, so everything you created or did in‑game was stored there. It also handled all your data, your info, your profile, everything.
+
+Since the game was niche and never got the attention it deserved, it didn’t get the financial support needed to keep the server running. It even went free for a while, which didn’t help. Because of that, in February 2024, the server shut down. And since the game needed that server to run at all, we basically lost access to the game for good.
+
+Thankfully, some amazing people managed to capture data from the game before it closed. Zetaphor, Cyel, and others published an archive that lets you “play” the game on a read‑only server called anyland‑archive redux. You can visit everything, but you can’t create or change anything. Still, most of the heavy lifting was done, and since the repo was open source, someone just had to take over and make it writable again.
+
+That’s where I came in. I made the server writable and functional like the original one. With the Echoland server, you can play the game again and enjoy it just like before. The best part is that you now have your own copy of the server. If you run it on your computer, it becomes your personal Anyland.
+
+It supports multiplayer with PUN, and I’ll add the BepInEx mod, so for a local setup it’s very easy to play with someone at home. And if you’re a bit more technical, you can even set up remote access to your server if you’re tech‑savvy.
 
 Echoland is designed to be:
 - Fully self-hostable
@@ -11,6 +21,8 @@ Echoland is designed to be:
 This project exists to preserve Anyland and keep it playable long-term.
 
 This is a community-driven effort. I started this with the goal of creating an open-source, writable archive. I’m not a trained developer, just someone diving in and learning as I go. The goal is to give the community a solid foundation to build their own servers, fully customizable and free to modify however you like.
+
+That server is based on another community effort made by Zetaphor And Cyel which is the full archive of all creations/areas in a [read-only server called anyland-archive redux](https://github.com/theneolanders/anyland-archive-redux) that I used to make all of this possible.
 
 It's safe to say that now, Anyland will live on—endlessly, openly, and forever in the hands of its community.
 
@@ -27,7 +39,6 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 - Area features working
 - Pretty much the majority of the functionalities work
 
-*Note: PUN (Photon Unity Networking) is not yet implemented, but can be added easily if desired.*
 
 ---
 
@@ -107,7 +118,7 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 
 ### 2. Configure Hosts File
 
-#### If you have the Steam version:
+#### Add these to *C:\Windows\System32\drivers\etc\hosts* :
 ```plaintext
 127.0.0.1 app.anyland.com
 127.0.0.1 d6ccx151yatz6.cloudfront.net
@@ -115,21 +126,10 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 #127.0.0.1 steamuserimages-a.akamaihd.net
 ```
 
-You won’t need the last line if you already have access to Steam artwork.  
-Use `127.0.0.1` if the server is on your local machine. Otherwise, use the IP of the machine hosting the server.
-
-#### If you’re using the non-Steam client:
-```plaintext
-127.0.0.1 app.anyland.com
-127.0.0.1 d6ccx151yatz6.cloudfront.net
-127.0.0.1 d26e4xubm8adxu.cloudfront.net
-127.0.0.1 steamuserimages-a.akamaihd.net
-```
-
 Download the client:  
 [Client Only](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link)
 
-Download the images folder (if using the non-Steam client):  
+Download the images folder (if you the archived images from steam artwork):  
 [Images Folder (Google Drive)](https://drive.google.com/file/d/1RbCZvx0SJK9oaLEhfDAfSgdZJKgmGxAU/view?usp=drive_link)
 
 Place the images folder inside the main Echoland directory.
