@@ -1655,8 +1655,24 @@ const app = new Elysia()
         ...body,
         creatorId
       };
+      // Never replace an existing area load file with a potentially partial payload.
+      // Merge incoming data into the current file so required metadata survives.
+      let existingAreaData: Record<string, any> = {};
+      try {
+        existingAreaData = JSON.parse(await fs.readFile(filePath, "utf-8"));
+      } catch {
+        // New area or unreadable file: proceed with sanitized body as base.
+      }
 
-      await Bun.write(filePath, JSON.stringify(sanitizedBody));
+      const mergedAreaData = {
+        ...existingAreaData,
+        ...sanitizedBody,
+        areaId,
+        areaName: sanitizedBody.areaName || sanitizedBody.name || existingAreaData.areaName,
+        ok: sanitizedBody.ok ?? existingAreaData.ok ?? true
+      };
+
+      await Bun.write(filePath, JSON.stringify(mergedAreaData, null, 2));
 
       // Update user's areasearch file so their created areas appear in search
       try {
@@ -2786,8 +2802,12 @@ const app = new Elysia()
     let areaData: Record<string, any> = {};
     try {
       areaData = JSON.parse(await fs.readFile(areaFilePath, "utf-8"));
-    } catch {
-      areaData = { areaId, placements: [] };
+    } catch (error) {
+      console.error(`[PLACEMENT NEW] Failed to read area load file for ${areaId}:`, error);
+      return new Response(JSON.stringify({ ok: false, error: "Failed to read area data" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     if (!Array.isArray(areaData.placements)) areaData.placements = [];
@@ -2882,8 +2902,12 @@ const app = new Elysia()
     let areaData: Record<string, any> = {};
     try {
       areaData = JSON.parse(await fs.readFile(areaFilePath, "utf-8"));
-    } catch {
-      areaData = { areaId, placements: [] };
+    } catch (error) {
+      console.error(`[PLACEMENT DELETE] Failed to read area load file for ${areaId}:`, error);
+      return new Response(JSON.stringify({ ok: false, error: "Failed to read area data" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     if (!Array.isArray(areaData.placements)) areaData.placements = [];
@@ -2937,8 +2961,12 @@ const app = new Elysia()
     let areaData: Record<string, any> = {};
     try {
       areaData = JSON.parse(await fs.readFile(areaFilePath, "utf-8"));
-    } catch {
-      areaData = { areaId, placements: [] };
+    } catch (error) {
+      console.error(`[PLACEMENT UPDATE] Failed to read area load file for ${areaId}:`, error);
+      return new Response(JSON.stringify({ ok: false, error: "Failed to read area data" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     if (!Array.isArray(areaData.placements)) areaData.placements = [];
@@ -2964,8 +2992,12 @@ const app = new Elysia()
     let areaData: Record<string, any> = {};
     try {
       areaData = JSON.parse(await fs.readFile(areaFilePath, "utf-8"));
-    } catch {
-      areaData = { areaId, placements: [] };
+    } catch (error) {
+      console.error(`[PLACEMENT DUPLICATE] Failed to read area load file for ${areaId}:`, error);
+      return new Response(JSON.stringify({ ok: false, error: "Failed to read area data" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     if (!Array.isArray(areaData.placements)) areaData.placements = [];
