@@ -62,6 +62,7 @@ function registerSession(sessionToken: string, profileName: string, personId: st
   };
   sessionsByToken.set(sessionToken, session);
   console.log(`[SESSION] Registered session ${sessionToken.substring(0, 12)}... for ${profileName}`);
+  notifyActiveChange();
 }
 
 // Get profile from session token (the cookie value)
@@ -247,6 +248,7 @@ function updatePlayerPresence(personId: string, profileName: string, areaId: str
     areaId,
     lastPing: now
   });
+  notifyActiveChange();
 }
 
 // Clean up stale presence entries (run periodically)
@@ -262,6 +264,7 @@ function cleanupStalePresence(): void {
   }
   if (removed > 0) {
     console.log(`[PRESENCE] Cleaned up ${removed} stale entries, ${playerPresence.size} active players`);
+    notifyActiveChange();
   }
 }
 
@@ -280,6 +283,74 @@ function getTotalOnlinePlayers(): number {
 // Run cleanup every 15 seconds
 setInterval(cleanupStalePresence, 15000);
 // ============ END PLAYER PRESENCE TRACKING ============
+
+const FRIENDS_DIR = "./data/person/friends";
+
+function getFriendsFilePath(personId: string): string {
+  return `${FRIENDS_DIR}/${personId}.json`;
+}
+
+async function loadFriendsData(personId: string): Promise<{ friends: Array<{ id: string; strength?: number; addedAt?: string }> }> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(getFriendsFilePath(personId), "utf-8"));
+    return Array.isArray(parsed?.friends) ? parsed : { friends: [] };
+  } catch {
+    return { friends: [] };
+  }
+}
+
+async function saveFriendsData(personId: string, data: { friends: Array<{ id: string; strength?: number; addedAt?: string }> }): Promise<void> {
+  await fs.mkdir(FRIENDS_DIR, { recursive: true });
+  const filePath = getFriendsFilePath(personId);
+  const tempPath = `${filePath}.tmp`;
+  await fs.writeFile(tempPath, JSON.stringify(data, null, 2));
+  await fs.rename(tempPath, filePath);
+}
+
+function isPersonOnline(personId: string): boolean {
+  const presence = playerPresence.get(personId);
+  if (!presence) return false;
+  return (Date.now() - presence.lastPing) < PRESENCE_TIMEOUT_MS;
+}
+
+async function buildFriendListEntry(friendId: string, strength = 1): Promise<Record<string, any>> {
+  let screenName = "Unknown";
+  let statusText = "";
+  let lastActivityOn = new Date().toISOString();
+  try {
+    const info = JSON.parse(await fs.readFile(`./data/person/info/${friendId}.json`, "utf-8"));
+    screenName = info.screenName || info.name || screenName;
+    statusText = info.statusText || "";
+    lastActivityOn = info.lastActivityOn || lastActivityOn;
+  } catch { }
+  return {
+    lastActivityOn,
+    screenName,
+    statusText,
+    id: friendId,
+    isOnline: isPersonOnline(friendId),
+    strength
+  };
+}
+
+async function getFriendsByStrengthResponse(personId: string) {
+  const { friends } = await loadFriendsData(personId);
+  const online: any[] = [];
+  const offline: any[] = [];
+  for (const friend of friends) {
+    const entry = await buildFriendListEntry(friend.id, friend.strength ?? 1);
+    if (entry.isOnline) online.push(entry);
+    else offline.push(entry);
+  }
+  offline.sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0));
+  return { online: { friends: online }, offline: { friends: offline } };
+}
+
+async function isFriendOf(requesterPersonId: string, targetUserId: string): Promise<boolean> {
+  if (!requesterPersonId || !targetUserId || requesterPersonId === targetUserId) return false;
+  const { friends } = await loadFriendsData(requesterPersonId);
+  return friends.some((f) => f.id === targetUserId);
+}
 
 const getDynamicAreaList = async () => {
   const arealistPath = "./data/area/arealist.json";
@@ -617,6 +688,115 @@ function notifyProfileChange() {
   sendAdminEvent("profile", { profile: currentActiveProfile });
 }
 
+function notifyActiveChange() {
+  sendAdminEvent("active", getAdminActiveSnapshot());
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function getAreaDisplayName(areaId: string): string {
+  const entry = areaIndex.find((a) => a.id === areaId);
+  return entry?.name || areaId;
+}
+
+function getAdminActiveSnapshot() {
+  const now = Date.now();
+  const online: Array<{
+    profileName: string;
+    personId: string;
+    areaId: string;
+    areaName: string;
+  }> = [];
+
+  for (const presence of playerPresence.values()) {
+    if ((now - presence.lastPing) < PRESENCE_TIMEOUT_MS) {
+      online.push({
+        profileName: presence.profileName,
+        personId: presence.personId,
+        areaId: presence.areaId,
+        areaName: getAreaDisplayName(presence.areaId)
+      });
+    }
+  }
+
+  const sessions: Array<{
+    profileName: string;
+    personId: string;
+    currentAreaId: string | null;
+    areaName: string;
+  }> = [];
+
+  for (const session of sessionsByToken.values()) {
+    sessions.push({
+      profileName: session.profileName,
+      personId: session.personId,
+      currentAreaId: session.currentAreaId,
+      areaName: session.currentAreaId ? getAreaDisplayName(session.currentAreaId) : "—"
+    });
+  }
+
+  return {
+    online,
+    sessions,
+    totalOnline: online.length,
+    sessionCount: sessions.length
+  };
+}
+
+async function deleteProfile(profileName: string): Promise<{ ok: boolean; error?: string }> {
+  const account = await loadAccountData(profileName);
+  if (!account) {
+    return { ok: false, error: "Profile not found" };
+  }
+
+  for (const [token, session] of sessionsByToken.entries()) {
+    if (session.profileName === profileName) {
+      sessionsByToken.delete(token);
+    }
+  }
+  playerPresence.delete(account.personId);
+
+  if (currentActiveProfile === profileName) currentActiveProfile = null;
+  if (nextClientProfile === profileName) nextClientProfile = null;
+
+  const personId = account.personId;
+  const homeAreaId = account.homeAreaId as string | undefined;
+
+  await fs.rm(getAccountPathForProfile(profileName), { force: true });
+  await fs.rm(`./data/person/info/${personId}.json`, { force: true });
+  await fs.rm(`./data/person/friends/${personId}.json`, { force: true });
+  await fs.rm(`./data/person/inventory/${personId}.json`, { force: true });
+  await fs.rm(`./data/person/areasearch/${personId}.json`, { force: true });
+  await fs.rm(`./data/person/gift/${personId}.json`, { force: true });
+  await fs.rm(`./data/person/topby/${personId}.json`, { force: true });
+
+  if (homeAreaId) {
+    await fs.rm(`./data/area/info/${homeAreaId}.json`, { force: true });
+    await fs.rm(`./data/area/load/${homeAreaId}.json`, { force: true });
+    await fs.rm(`./data/area/subareas/${homeAreaId}.json`, { force: true });
+    await fs.rm(`./data/area/bundle/${homeAreaId}`, { recursive: true, force: true });
+
+    const idx = areaIndex.findIndex((a) => a.id === homeAreaId);
+    if (idx !== -1) {
+      const area = areaIndex[idx];
+      areaByUrlName.delete(area.name.replace(/[^-_a-z0-9]/gi, "").toLowerCase());
+      areaIndex.splice(idx, 1);
+      try {
+        await fs.mkdir("./cache", { recursive: true });
+        await fs.writeFile("./cache/areaIndex.json", JSON.stringify(areaIndex, null, 2));
+      } catch { }
+    }
+  }
+
+  return { ok: true };
+}
+
 const areaIndex: { name: string, description?: string, id: string, playerCount: number }[] = [];
 const areaByUrlName = new Map<string, string>()
 
@@ -873,6 +1053,7 @@ const app = new Elysia()
 
   .get("/admin", async () => {
     const profiles = await listProfiles();
+    const active = getAdminActiveSnapshot();
     const pendingHtml = pendingClients.length
       ? pendingClients.map((client) => `
         <div class="client-item">
@@ -894,9 +1075,33 @@ const app = new Elysia()
       `).join("")
       : `<div class="empty">No clients waiting. Start a client to see it here.</div>`;
 
-    const profileList = profiles.length
-      ? profiles.map((p) => `<span class="profile-tag">${p}</span>`).join("")
-      : `<div class="empty">No profiles yet.</div>`;
+    const onlineProfileNames = new Set(active.online.map((o) => o.profileName));
+    const sessionProfileNames = new Set(active.sessions.map((s) => s.profileName));
+
+    const profileRows = profiles.length
+      ? profiles.map((p) => {
+          const esc = escapeHtml(p);
+          let status = "Offline";
+          let statusClass = "status-offline";
+          if (onlineProfileNames.has(p)) {
+            status = "In-world";
+            statusClass = "status-online";
+          } else if (sessionProfileNames.has(p)) {
+            status = "Logged in";
+            statusClass = "status-session";
+          }
+          return `<tr>
+            <td><strong>${esc}</strong></td>
+            <td><span class="status-pill ${statusClass}">${status}</span></td>
+            <td>
+              <form class="delete-form" action="/admin/delete-profile" method="GET" onsubmit="return confirm('Delete profile &quot;${esc}&quot;? This removes the account and home area.');">
+                <input type="hidden" name="name" value="${esc}" />
+                <button type="submit" class="btn-danger">Delete</button>
+              </form>
+            </td>
+          </tr>`;
+        }).join("")
+      : `<tr><td colspan="3" class="empty">No profiles yet.</td></tr>`;
 
     const nextProfileHtml = nextClientProfile
       ? `<div style="margin: 12px 0; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 6px;">
@@ -915,24 +1120,38 @@ const app = new Elysia()
     const html = `<!DOCTYPE html>
 <html>
 <head>
+	<meta charset="UTF-8">
   <title>Echoland Admin</title>
   <style>
     body { font-family: Arial, sans-serif; background: #0f141c; color: #e0e6f0; margin: 0; padding: 30px; }
-    .container { max-width: 900px; margin: 0 auto; }
+    .container { max-width: 960px; margin: 0 auto; }
     h1 { margin-bottom: 20px; }
+    h2 { margin-top: 0; font-size: 1.1rem; }
     .card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
     .client-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
     .client-item:last-child { border-bottom: none; }
-    .assign-form { display: flex; gap: 8px; align-items: center; }
+    .assign-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     select, input[type="text"] { padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #fff; }
     button { padding: 8px 16px; border: none; border-radius: 6px; background: #2f89ff; color: white; cursor: pointer; }
     button:hover { background: #1d6adf; }
-    .profile-tag { display: inline-block; padding: 6px 12px; background: rgba(255,255,255,0.1); margin: 4px; border-radius: 12px; }
+    button.btn-danger { background: #dc2626; }
+    button.btn-danger:hover { background: #b91c1c; }
     .empty { color: #8a93a6; font-style: italic; }
-    form.inline { display: flex; gap: 8px; margin-top: 12px; }
+    form.inline, form.delete-form { display: flex; gap: 8px; margin: 0; align-items: center; }
     .active-badge { display: inline-block; padding: 6px 14px; background: #22c55e; color: #000; font-weight: bold; border-radius: 20px; margin-left: 12px; }
-    .header { display: flex; align-items: center; margin-bottom: 20px; }
+    .header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
     .header h1 { margin: 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    th { color: #8a93a6; font-size: 0.85rem; font-weight: normal; }
+    .status-pill { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
+    .status-online { background: rgba(34,197,94,0.2); color: #4ade80; }
+    .status-session { background: rgba(59,130,246,0.2); color: #93c5fd; }
+    .status-offline { background: rgba(255,255,255,0.08); color: #8a93a6; }
+    .live-row { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .live-row:last-child { border-bottom: none; }
+    .meta { color: #8a93a6; font-size: 0.85rem; }
+    .live-count { color: #4ade80; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -942,12 +1161,28 @@ const app = new Elysia()
       <span id="active-profile" class="active-badge">${currentActiveProfile ? 'Active: ' + currentActiveProfile : 'No active profile'}</span>
     </div>
     <div class="card">
+      <h2>Live activity <span class="live-count" id="live-count">${active.totalOnline} in-world</span> · <span id="session-count">${active.sessionCount} sessions</span></h2>
+      <div id="active-players-list">
+        ${active.online.length
+          ? active.online.map((o) => `<div class="live-row"><strong>${escapeHtml(o.profileName)}</strong> <span class="meta">in ${escapeHtml(o.areaName)}</span></div>`).join("")
+          : `<div class="empty">No players in-world right now (ping timeout ${PRESENCE_TIMEOUT_MS / 1000}s)</div>`}
+      </div>
+      <div id="active-sessions-list" style="margin-top:12px;">
+        ${active.sessions.length
+          ? `<div class="meta" style="margin-bottom:6px;">Logged-in sessions:</div>` + active.sessions.map((s) => `<div class="live-row"><strong>${escapeHtml(s.profileName)}</strong> <span class="meta">area: ${escapeHtml(s.areaName)}</span></div>`).join("")
+          : ""}
+      </div>
+    </div>
+    <div class="card">
       <h2>Pending Clients (${pendingClients.length})</h2>
       ${pendingHtml}
     </div>
     <div class="card">
       <h2>Profiles (${profiles.length})</h2>
-      <div>${profileList}</div>
+      <table>
+        <thead><tr><th>Name</th><th>Status</th><th></th></tr></thead>
+        <tbody id="profiles-table-body">${profileRows}</tbody>
+      </table>
       <form class="inline" action="/admin/create-profile" method="GET">
         <input type="text" name="name" placeholder="New profile name" required />
         <button type="submit">Create</button>
@@ -1004,14 +1239,61 @@ const app = new Elysia()
         eventSource.addEventListener('connected', (e) => {
           console.log('[Admin] SSE ready');
         });
+
+        eventSource.addEventListener('active', (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            const liveCount = document.getElementById('live-count');
+            const sessionCount = document.getElementById('session-count');
+            const list = document.getElementById('active-players-list');
+            const sessionsList = document.getElementById('active-sessions-list');
+            if (liveCount) liveCount.textContent = data.totalOnline + ' in-world';
+            if (sessionCount) sessionCount.textContent = data.sessionCount + ' sessions';
+            if (list) {
+              list.innerHTML = data.online.length
+                ? data.online.map(o => '<div class="live-row"><strong>' + o.profileName + '</strong> <span class="meta">in ' + o.areaName + '</span></div>').join('')
+                : '<div class="empty">No players in-world right now</div>';
+            }
+            if (sessionsList) {
+              sessionsList.innerHTML = data.sessions.length
+                ? '<div class="meta" style="margin-bottom:6px;">Logged-in sessions:</div>' + data.sessions.map(s => '<div class="live-row"><strong>' + s.profileName + '</strong> <span class="meta">area: ' + s.areaName + '</span></div>').join('')
+                : '';
+            }
+          } catch {}
+        });
+      }
+
+      async function refreshActive() {
+        try {
+          const res = await fetch('/api/admin/active');
+          const data = await res.json();
+          const liveCount = document.getElementById('live-count');
+          const sessionCount = document.getElementById('session-count');
+          const list = document.getElementById('active-players-list');
+          const sessionsList = document.getElementById('active-sessions-list');
+          if (liveCount) liveCount.textContent = data.totalOnline + ' in-world';
+          if (sessionCount) sessionCount.textContent = data.sessionCount + ' sessions';
+          if (list) {
+            list.innerHTML = data.online.length
+              ? data.online.map(o => '<div class="live-row"><strong>' + o.profileName + '</strong> <span class="meta">in ' + o.areaName + '</span></div>').join('')
+              : '<div class="empty">No players in-world right now</div>';
+          }
+          if (sessionsList) {
+            sessionsList.innerHTML = data.sessions.length
+              ? '<div class="meta" style="margin-bottom:6px;">Logged-in sessions:</div>' + data.sessions.map(s => '<div class="live-row"><strong>' + s.profileName + '</strong> <span class="meta">area: ' + s.areaName + '</span></div>').join('')
+              : '';
+          }
+        } catch {}
       }
       
       connect();
+      refreshActive();
+      setInterval(refreshActive, 3000);
     })();
   </script>
 </body>
 </html>`;
-    return new Response(html, { headers: { "Content-Type": "text/html" } });
+    return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
   .get("/admin/assign", async ({ query }) => {
     const clientId = query.clientId;
@@ -1065,6 +1347,28 @@ const app = new Elysia()
     console.log(`[ADMIN] Cleared next client profile`);
     return Response.redirect("/admin", 302);
   })
+  .get("/admin/delete-profile", async ({ query }) => {
+    const name = (query.name || "").trim();
+    if (name) {
+      const result = await deleteProfile(name);
+      if (result.ok) {
+        console.log(`[ADMIN] Deleted profile ${name}`);
+        notifyActiveChange();
+      } else {
+        console.warn(`[ADMIN] Could not delete profile ${name}:`, result.error);
+      }
+    }
+    return Response.redirect("/admin", 302);
+  }, {
+    query: t.Object({
+      name: t.Optional(t.String())
+    })
+  })
+  .get("/api/admin/active", () => {
+    return new Response(JSON.stringify(getAdminActiveSnapshot()), {
+      headers: { "Content-Type": "application/json" }
+    });
+  })
   .get("/api/profiles", async () => {
     const profiles = await listProfiles();
     return new Response(JSON.stringify({ profiles }), {
@@ -1103,6 +1407,11 @@ const app = new Elysia()
         controller.enqueue(
           textEncoder.encode(
             `event: pending\ndata: ${JSON.stringify({ pending: pendingClients.length })}\n\n`
+          )
+        );
+        controller.enqueue(
+          textEncoder.encode(
+            `event: active\ndata: ${JSON.stringify(getAdminActiveSnapshot())}\n\n`
           )
         );
       },
@@ -2856,9 +3165,147 @@ const app = new Elysia()
       placementId: t.String()
     })
   })
-  .get("person/friendsbystr",
-    () => canned_friendsbystr
-  )
+  .post("/person/addfriend", async ({ body, cookie }) => {
+    const friendId = (body as any).userId || (body as any).id || (body as any).friendId;
+    if (!friendId || typeof friendId !== "string") {
+      return new Response(JSON.stringify({ ok: false, error: "Missing friend id" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const sessionToken = (cookie as any).s?.value as string | undefined;
+    const session = getSessionFromToken(sessionToken);
+    if (!session?.personId) {
+      return new Response(JSON.stringify({ ok: false, error: "Not authenticated" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    if (friendId === session.personId) {
+      return new Response(JSON.stringify({ ok: false, error: "Cannot add yourself" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    try {
+      const friendsData = await loadFriendsData(session.personId);
+      if (friendsData.friends.some((f) => f.id === friendId)) {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      friendsData.friends.push({
+        id: friendId,
+        strength: 1,
+        addedAt: new Date().toISOString()
+      });
+      await saveFriendsData(session.personId, friendsData);
+      console.log(`[ADD FRIEND] ${session.profileName} (${session.personId}) added friend ${friendId}`);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (error) {
+      console.error("[ADD FRIEND] Error:", error);
+      return new Response(JSON.stringify({ ok: false, error: "Server error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  }, {
+    body: t.Object({
+      userId: t.Optional(t.String()),
+      id: t.Optional(t.String()),
+      friendId: t.Optional(t.String())
+    }),
+    type: "form"
+  })
+  .post("/person/removefriend", async ({ body, cookie }) => {
+    const friendId = (body as any).userId || (body as any).id || (body as any).friendId;
+    if (!friendId || typeof friendId !== "string") {
+      return new Response(JSON.stringify({ ok: false, error: "Missing friend id" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const sessionToken = (cookie as any).s?.value as string | undefined;
+    const session = getSessionFromToken(sessionToken);
+    if (!session?.personId) {
+      return new Response(JSON.stringify({ ok: false, error: "Not authenticated" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    try {
+      const friendsData = await loadFriendsData(session.personId);
+      const before = friendsData.friends.length;
+      friendsData.friends = friendsData.friends.filter((f) => f.id !== friendId);
+      if (friendsData.friends.length !== before) {
+        await saveFriendsData(session.personId, friendsData);
+        console.log(`[REMOVE FRIEND] ${session.profileName} (${session.personId}) removed friend ${friendId}`);
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (error) {
+      console.error("[REMOVE FRIEND] Error:", error);
+      return new Response(JSON.stringify({ ok: false, error: "Server error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  }, {
+    body: t.Object({
+      userId: t.Optional(t.String()),
+      id: t.Optional(t.String()),
+      friendId: t.Optional(t.String())
+    }),
+    type: "form"
+  })
+  .post("/person/getflag", async ({ body }) => {
+    const personId = (body as { id?: string }).id;
+    if (!personId || typeof personId !== "string") {
+      return new Response(JSON.stringify({ ok: false, error: "Missing id" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    let isFlagged = false;
+    try {
+      const info = JSON.parse(await fs.readFile(`./data/person/info/${personId}.json`, "utf-8"));
+      isFlagged = info.isFlagged === true || info.isBanned === true;
+    } catch {
+      // No person info file — not flagged
+    }
+
+    return new Response(JSON.stringify({ isFlagged }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  }, {
+    body: t.Object({ id: t.String() }),
+    type: "form"
+  })
+  .get("person/friendsbystr", async ({ cookie }) => {
+    const sessionToken = (cookie as any).s?.value as string | undefined;
+    const session = getSessionFromToken(sessionToken);
+    if (!session?.personId) return canned_friendsbystr;
+    try {
+      return await getFriendsByStrengthResponse(session.personId);
+    } catch (error) {
+      console.error("[FRIENDS BY STR] Error:", error);
+      return canned_friendsbystr;
+    }
+  })
   .post("/placement/save", async ({ body: { areaId, placementId, data } }) => {
     if (!areaId || !placementId || !data) {
       console.error("Missing required placement fields");
@@ -3166,7 +3613,7 @@ const app = new Elysia()
     })
   })
   .post("person/info",
-    async ({ body: { areaId, userId } }) => {
+    async ({ body: { areaId, userId }, cookie }) => {
       // Load base person info
       const file = Bun.file(path.resolve("./data/person/info/", userId + ".json"));
       let personData: Record<string, any> = {};
@@ -3182,6 +3629,13 @@ const app = new Elysia()
           isAreaLocked: false, 
           isOnline: false 
         };
+      }
+
+      const sessionToken = (cookie as any).s?.value as string | undefined;
+      const session = getSessionFromToken(sessionToken);
+      if (session?.personId) {
+        personData.isFriend = await isFriendOf(session.personId, userId);
+        personData.isOnline = isPersonOnline(userId);
       }
       
       // Add area-specific editor info
