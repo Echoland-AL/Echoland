@@ -30,6 +30,11 @@ class AsyncMutex {
 const accountMutex = new AsyncMutex();
 const textEncoder = new TextEncoder();
 
+function daysOld(ts: number) {
+  const now = Date.now();
+  return Math.floor((now - ts) / 86400000);
+}
+
 const ACCOUNTS_DIR = "./data/person/accounts";
 
 // Track the currently active profile (for Unity clients that don't send cookies)
@@ -2026,6 +2031,7 @@ const app = new Elysia()
             
             return {
               ...areaData,
+              ageDays: daysOld(areaData.createdAt),
               forceEditMode: hasEditPermission,
               requestorIsEditor: hasEditPermission,
               requestorIsListEditor: hasEditPermission,
@@ -2115,6 +2121,7 @@ const app = new Elysia()
 
             return {
               ...areaData,
+              ageDays: daysOld(areaData.createdAt),
               requestorIsEditor: hasEditPermission,
               requestorIsListEditor: hasEditPermission,
               requestorIsOwner: isOwner,
@@ -2150,7 +2157,7 @@ const app = new Elysia()
         try {
           const data = await file.json();
           console.log(`[AREA INFO] Loaded info for area ${areaId}`);
-          return data;
+          return { ...data, ageDays: daysOld(data.createdAt) };
         } catch (err) {
           console.error(`[AREA INFO] Error parsing info for area ${areaId}:`, err);
           return { ok: false, error: "Failed to parse area info" };
@@ -3493,7 +3500,12 @@ const app = new Elysia()
       const metadata = {
         placerId: parsed.placerId || "unknown",
         placerName: parsed.placerName || "anonymous",
-        placedDaysAgo: parsed.placedDaysAgo || 0
+
+
+
+
+                placedDaysAgo: daysOld(parsed.createdAt),
+        ageDays: daysOld(parsed.createdAt)
       };
 
       return new Response(JSON.stringify(metadata), {
@@ -4036,12 +4048,13 @@ const app = new Elysia()
         Id: parsed.Id,
         Tid: parsed.Tid,
         P: parsed.P,
-        R: parsed.R,
+                R: parsed.R,
         S: parsed.S || { x: 1, y: 1, z: 1 },
         A: parsed.A || [],
         D: parsed.D || {},
         placerId: personId,
         placerName: screenName,
+        createdAt: Date.now(),
         placedDaysAgo: 0
       };
     });
@@ -4242,6 +4255,7 @@ const app = new Elysia()
       
       console.log(`[PERSON INFO] User ${userId} in area ${areaId}: isEditor=${personData.isEditorHere}, isOwner=${personData.isOwnerHere}, requestorIsOwner=${personData.requestorIsOwner}`);
       
+      personData.ageDays = daysOld(personData.createdAt);
       return personData;
     },
     { body: t.Object({ areaId: t.String(), userId: t.String() }) }
@@ -4760,11 +4774,12 @@ const app = new Elysia()
     }
 
     // ✅ Build thinginfo object
-    const thingInfo = {
+        const thingInfo = {
       id: thingId,
       name: thingName,
       creatorId,
       creatorName,
+      createdAt: Date.now(),
       createdDaysAgo: 0,
       collectedCount: 0,
       placedCount: 1,
@@ -5238,8 +5253,9 @@ const app = new Elysia()
         id: parsed.id || id,
         name: parsed.name || "",
         creatorId: parsed.creatorId,
+        ageDays: daysOld(parsed.createdAt),
         creatorName: parsed.creatorName,
-        createdDaysAgo: parsed.createdDaysAgo || 0,
+        createdDaysAgo: daysOld(parsed.createdAt),
         collectedCount: parsed.collectedCount || 0,
         placedCount: parsed.placedCount || 0,
         allCreatorsThingsClonable: parsed.allCreatorsThingsClonable ?? true,
