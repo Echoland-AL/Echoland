@@ -35,6 +35,25 @@ function daysOld(ts: number) {
   return Math.floor((now - ts) / 86400000);
 }
 
+function enrichThingInfo(parsed: Record<string, any>, id?: string) {
+  const createdAt = typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now();
+  const age = daysOld(createdAt);
+  return {
+    id: parsed.id || id,
+    name: parsed.name || "",
+    creatorId: parsed.creatorId,
+    creatorName: parsed.creatorName,
+    createdAt,
+    ageDays: age,
+    createdDaysAgo: age,
+    collectedCount: parsed.collectedCount || 0,
+    placedCount: parsed.placedCount || 0,
+    allCreatorsThingsClonable: parsed.allCreatorsThingsClonable ?? true,
+    isUnlisted: parsed.isUnlisted || false,
+    ...(parsed.vertexCount !== undefined && { vertexCount: parsed.vertexCount }),
+  };
+}
+
 const ACCOUNTS_DIR = "./data/person/accounts";
 
 // Track the currently active profile (for Unity clients that don't send cookies)
@@ -359,6 +378,11 @@ function cleanupStaleSessions(): void {
     console.log(`[SESSION] Cleaned up ${removed} stale sessions, ${sessionsByToken.size} active`);
     notifyActiveChange();
   }
+}
+
+function resolveAreaNameForPing(areaId: string): string {
+  const entry = areaIndex.find(a => a.id === areaId);
+  return entry?.name || "Unknown Area";
 }
 
 function getActiveSessionsByProfile(): ClientSession[] {
@@ -3456,7 +3480,8 @@ const app = new Elysia()
       parsed.placerName = "anonymous";
     }
 
-    parsed.placedDaysAgo = 0;
+    parsed.createdAt = typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now();
+    delete parsed.placedDaysAgo;
 
     await fs.mkdir(`./data/placement/info/${areaId}`, { recursive: true });
     await Bun.write(placementPath, JSON.stringify(parsed, null, 2));
@@ -4054,8 +4079,7 @@ const app = new Elysia()
         D: parsed.D || {},
         placerId: personId,
         placerName: screenName,
-        createdAt: Date.now(),
-        placedDaysAgo: 0
+        createdAt: Date.now()
       };
     });
 
@@ -4780,7 +4804,6 @@ const app = new Elysia()
       creatorId,
       creatorName,
       createdAt: Date.now(),
-      createdDaysAgo: 0,
       collectedCount: 0,
       placedCount: 1,
       allCreatorsThingsClonable: true,
@@ -5131,9 +5154,9 @@ const app = new Elysia()
   .get("/thing/info/:id", async ({ params }) => {
     const filePath = `./data/thing/info/${params.id}.json`;
     try {
-      const raw = await fs.readFile(filePath, "utf-8");
+      const parsed = JSON.parse(await fs.readFile(filePath, "utf-8"));
       console.log(`📤 /thing/info/${params.id} → served`);
-      return new Response(raw, {
+      return new Response(JSON.stringify(enrichThingInfo(parsed, params.id)), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
@@ -5248,21 +5271,7 @@ const app = new Elysia()
       const data = await fs.readFile(filePath, "utf-8");
       const parsed = JSON.parse(data);
 
-      // Return all thing info fields including name
-      return new Response(JSON.stringify({
-        id: parsed.id || id,
-        name: parsed.name || "",
-        creatorId: parsed.creatorId,
-        ageDays: daysOld(parsed.createdAt),
-        creatorName: parsed.creatorName,
-        createdDaysAgo: daysOld(parsed.createdAt),
-        collectedCount: parsed.collectedCount || 0,
-        placedCount: parsed.placedCount || 0,
-        allCreatorsThingsClonable: parsed.allCreatorsThingsClonable ?? true,
-        isUnlisted: parsed.isUnlisted || false,
-        vertexCount: parsed.vertexCount,
-        createdAt: parsed.createdAt
-      }), {
+      return new Response(JSON.stringify(enrichThingInfo(parsed, id)), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
@@ -5322,7 +5331,7 @@ const app = new Elysia()
       console.log(`[THING INDEX] ✅ Added thing ${thingId} to search index`);
     }
 
-    return new Response(JSON.stringify({ ok: true, updated: thingData }), {
+    return new Response(JSON.stringify({ ok: true, updated: enrichThingInfo(thingData, thingId) }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });
