@@ -129,7 +129,7 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 Download the client:  
 [Client Only](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link)
 
-Download the patch (placed in the game's directory):
+Download the patch:
 [Patch.rar](https://drive.google.com/file/d/1TuJ7Jj6Ww730XiDQ-RWHNhFDwtOosSHK/view?usp=sharing)
 
 Download the images folder (If you want them locally):  
