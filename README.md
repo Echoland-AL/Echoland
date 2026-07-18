@@ -123,7 +123,7 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 127.0.0.1 app.anyland.com
 127.0.0.1 d6ccx151yatz6.cloudfront.net
 127.0.0.1 d26e4xubm8adxu.cloudfront.net
-#127.0.0.1 steamuserimages-a.akamaihd.net
+127.0.0.1 steamuserimages-a.akamaihd.net
 ```
 
 Download the client:  
