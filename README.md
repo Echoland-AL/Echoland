@@ -110,7 +110,7 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 - Click **"Start-Server Docker.bat"** to start both services automatically
 
 #### Option B: Direct Installation (Advanced users)
-- **Windows**: Install [Bun](https://bun.sh/) runtime and download [Caddy](https://caddyserver.com/) web server
+- **Windows**: Install [Bun](https://bun.sh/) runtime or just directly open powershell and type this : " powershell -c "irm bun.sh/install.ps1 | iex "
 - **Linux**: Run `./install-and-run.sh` to install Bun and start the server
 - Click **"Start-Server.bat"** (Windows) or use the launch scripts to start both game server (Bun) and web server (Caddy)
 
