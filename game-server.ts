@@ -957,6 +957,9 @@ const areaIndex: { name: string, description?: string, id: string, playerCount: 
 const areaByUrlName = new Map<string, string>()
 const areaSelectionStats = new Map<string, { totalVisitors: number; placementsCount: number }>();
 
+const AREA_STATS_CACHE = "./cache/areaSelectionStats.json";
+
+
 async function readAreaSelectionStats(areaId: string) {
   const cached = areaSelectionStats.get(areaId);
   if (cached) return cached;
@@ -965,7 +968,7 @@ async function readAreaSelectionStats(areaId: string) {
   let placementsCount = 0;
 
   try {
-    const infoPath = path.resolve("./data/area/info/", areaId + ".json");
+    const infoPath = `./data/area/info/${areaId}.json`;
     const infoFile = Bun.file(infoPath);
     if (await infoFile.exists()) {
       const info = await infoFile.json();
@@ -974,7 +977,7 @@ async function readAreaSelectionStats(areaId: string) {
   } catch {}
 
   try {
-    const loadPath = path.resolve("./data/area/load/", areaId + ".json");
+    const loadPath = `./data/area/load/${areaId}.json`;
     const loadFile = Bun.file(loadPath);
     if (await loadFile.exists()) {
       const loadData = await loadFile.json();
@@ -984,8 +987,13 @@ async function readAreaSelectionStats(areaId: string) {
 
   const stats = { totalVisitors, placementsCount };
   areaSelectionStats.set(areaId, stats);
+
+  await fs.mkdir("./cache", { recursive: true });
+  await Bun.write(AREA_STATS_CACHE, JSON.stringify(Object.fromEntries(areaSelectionStats)));
+
   return stats;
 }
+
 
 console.log("building area index...")
 const cacheFile = Bun.file("./cache/areaIndex.json");
@@ -1071,7 +1079,76 @@ if (areaIndex.length === 0) {
   await Bun.write("./cache/areaIndex.json", JSON.stringify(areaIndex));
 }
 
-await Promise.all(areaIndex.map((entry) => readAreaSelectionStats(entry.id)));
+async function loadAreaStatsCache() {
+  try {
+    const file = Bun.file(AREA_STATS_CACHE);
+    if (await file.exists()) {
+      const cached = await file.json();
+      if (cached && typeof cached === "object") {
+        for (const [areaId, stats] of Object.entries(cached)) {
+          areaSelectionStats.set(areaId, stats as { totalVisitors: number; placementsCount: number });
+        }
+        console.log(`✓ Loaded ${areaSelectionStats.size} area stats from cache`);
+      }
+    }
+  } catch {
+    console.log("Area stats cache invalid, ignoring");
+  }
+}
+
+// First-run preload: build stats cache if missing
+const statsCacheFile = Bun.file(AREA_STATS_CACHE);
+if (!(await statsCacheFile.exists())) {
+  console.log("Building initial area stats cache...");
+
+  const statsObj: Record<string, { totalVisitors: number; placementsCount: number }> = {};
+  const total = areaIndex.length;
+
+  for (let i = 0; i < total; i++) {
+    const entry = areaIndex[i];
+    const areaId = entry.id;
+
+    // Progress logging every 1000 areas
+    if (i % 1000 === 0) {
+      const percent = ((i / total) * 100).toFixed(1);
+      console.log(`Area stats preload: ${i}/${total} (${percent}%)`);
+    }
+
+    let totalVisitors = 0;
+    let placementsCount = 0;
+
+    try {
+      const infoPath = `./data/area/info/${areaId}.json`;
+      const infoFile = Bun.file(infoPath);
+      if (await infoFile.exists()) {
+        const info = await infoFile.json();
+        totalVisitors = typeof info.totalVisitors === "number" ? info.totalVisitors : 0;
+      }
+    } catch {}
+
+    try {
+      const loadPath = `./data/area/load/${areaId}.json`;
+      const loadFile = Bun.file(loadPath);
+      if (await loadFile.exists()) {
+        const loadData = await loadFile.json();
+        placementsCount = Array.isArray(loadData?.placements) ? loadData.placements.length : 0;
+      }
+    } catch {}
+
+    statsObj[areaId] = { totalVisitors, placementsCount };
+  }
+
+  await fs.mkdir("./cache", { recursive: true });
+  await Bun.write(AREA_STATS_CACHE, JSON.stringify(statsObj));
+
+  console.log(`✓ Initial area stats cache created (${total} areas)`);
+}
+
+
+
+await loadAreaStatsCache();
+
+
 
 const normalizeAreaName = (name: string): string => {
   return name.replace(/[^-_a-z0-9]/gi, "").toLowerCase();
