@@ -110,7 +110,7 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 - Click **"Start-Server Docker.bat"** to start both services automatically
 
 #### Option B: Direct Installation (Advanced users)
-- **Windows**: Install [Bun](https://bun.sh/) runtime and download [Caddy](https://caddyserver.com/) web server
+- **Windows**: Install [Bun](https://bun.sh/) runtime or just directly open powershell and type this : " powershell -c "irm bun.sh/install.ps1 | iex "
 - **Linux**: Run `./install-and-run.sh` to install Bun and start the server
 - Click **"Start-Server.bat"** (Windows) or use the launch scripts to start both game server (Bun) and web server (Caddy)
 
@@ -123,13 +123,16 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 127.0.0.1 app.anyland.com
 127.0.0.1 d6ccx151yatz6.cloudfront.net
 127.0.0.1 d26e4xubm8adxu.cloudfront.net
-#127.0.0.1 steamuserimages-a.akamaihd.net
+127.0.0.1 steamuserimages-a.akamaihd.net
 ```
 
 Download the client:  
 [Client Only](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link)
 
-Download the images folder (if you the archived images from steam artwork):  
+Download the patch:
+[Patch.rar](https://drive.google.com/file/d/1TuJ7Jj6Ww730XiDQ-RWHNhFDwtOosSHK/view?usp=sharing)
+
+Download the images folder (If you want them locally):  
 [Images Folder (Google Drive)](https://drive.google.com/file/d/1RbCZvx0SJK9oaLEhfDAfSgdZJKgmGxAU/view?usp=drive_link)
 
 Place the images folder inside the main Echoland directory.
