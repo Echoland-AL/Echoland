@@ -116,7 +116,7 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 
 ---
 
-### 2. Configure Hosts File
+### 2. Configure Hosts File (Deprecated, you can use the small EchoSwitch Software)
 
 #### Add these to *C:\Windows\System32\drivers\etc\hosts* :
 ```plaintext
