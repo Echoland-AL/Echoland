@@ -97,7 +97,7 @@ The server is written in TypeScript and runs with Bun. Contributions are welcome
 
 ## Setup & Running
 
-[Tbh just watch this instead of reading the mess I made below](https://www.youtube.com/watch?v=se97PN2JKhc)
+[WATCH THIS VIDEO](https://www.youtube.com/watch?v=se97PN2JKhc)
 
 ### 1. Choose Your Installation Method
 
