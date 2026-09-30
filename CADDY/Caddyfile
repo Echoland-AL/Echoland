@@ -1,27 +1,35 @@
 {
-    # Disable HTTPS and admin for local development
     auto_https off
     admin off
 }
 
-# API Routes - Port 8000
-:80 {
-    handle {
-        reverse_proxy localhost:8000
-    }
+# API (port 8000)
+http://app.anyland.com {
+    reverse_proxy localhost:8000
 }
 
-# Thing Definitions CDN - Port 8001
+# Thing Definitions CDN (port 8001)
 http://d6ccx151yatz6.cloudfront.net {
     reverse_proxy localhost:8001
 }
 
-# Area Bundles CDN - Port 8002
+# Area Bundles CDN (port 8002)
 http://d26e4xubm8adxu.cloudfront.net {
     reverse_proxy localhost:8002
 }
 
-# Steam User Images CDN - Port 8003
+# Steam User Images CDN (port 8003) + Rewrite everything to new Steam CDN
 http://steamuserimages-a.akamaihd.net {
-    reverse_proxy localhost:8003
+    reverse_proxy https://images.steamusercontent.com {
+        header_up Host images.steamusercontent.com
+    }
 }
+
+:80 {
+    reverse_proxy localhost:8000
+
+    route /synth* {
+        reverse_proxy localhost:42069
+    }
+}
+
