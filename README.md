@@ -128,7 +128,7 @@ Download the client:
 [Client Only](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link)
 
 Download the patch:
-[Patch.rar](https://drive.google.com/file/d/19YIQPYg0hnUmc0g9prJyrmxt59stNCNc/view?usp=sharing)
+[Patch.rar](https://drive.google.com/file/d/1_ZxluhZNU-BK5tbyWPHHNd16LZu0t7QH/view?usp=sharing)
 
 Download the images folder (If you want them locally):  
 [Images Folder (Google Drive)](https://drive.google.com/file/d/1RbCZvx0SJK9oaLEhfDAfSgdZJKgmGxAU/view?usp=drive_link)
