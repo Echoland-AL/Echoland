@@ -2416,6 +2416,52 @@ const app = new Elysia()
     { body: t.Object({ areaId: t.String() }) }
   )
   .post(
+    "/area/setparentarea",
+    async ({ body: { areaId, parentAreaId } }) => {
+      // No parentAreaId = remove from parent
+      if (!parentAreaId) {
+        const allFiles = await fs.readdir("./data/area/subareas/").catch(() => []);
+        for (const f of allFiles) {
+          if (!f.endsWith(".json")) continue;
+          const fp = path.resolve("./data/area/subareas/", f);
+          try {
+            const d = JSON.parse(await fs.readFile(fp, "utf-8"));
+            const subs = d.subAreas || d.subareas || [];
+            if (subs.some((s: any) => s.id === areaId)) {
+              d.subAreas = subs.filter((s: any) => s.id !== areaId);
+              await fs.writeFile(fp, JSON.stringify(d, null, 2));
+            }
+          } catch {}
+        }
+        return { ok: true };
+      }
+
+      const subareaPath = path.resolve("./data/area/subareas/", parentAreaId + ".json");
+      let data = { subAreas: [] };
+      try {
+        data = JSON.parse(await fs.readFile(subareaPath, "utf-8"));
+      } catch {
+        // file doesn't exist yet
+      }
+      if (!data.subAreas) data.subAreas = [];
+
+      // Get child area name from info file
+      const childInfoPath = path.resolve("./data/area/info/", areaId + ".json");
+      let childName = "";
+      try {
+        const childInfo = JSON.parse(await fs.readFile(childInfoPath, "utf-8"));
+        childName = childInfo.name || "";
+      } catch {
+        // ignore
+      }
+
+      data.subAreas.push({ id: areaId, name: childName });
+      await fs.writeFile(subareaPath, JSON.stringify(data, null, 2));
+      return { ok: true };
+    },
+    { body: t.Object({ areaId: t.String(), parentAreaId: t.Optional(t.String()) }) }
+  )
+  .post(
     "/area/search",
     async ({ body: { term, byCreatorId, byCreatorName } }) => {
       if (byCreatorId) {
