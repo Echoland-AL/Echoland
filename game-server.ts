@@ -4143,6 +4143,56 @@ const app = new Elysia()
       areaId: t.String()
     })
   })
+  .post("/placement/replacething", async ({ body: { areaId, originalThingId, newThingId } }) => {
+    const placementDir = `./data/placement/info/${areaId}`;
+    const areaFilePath = `./data/area/load/${areaId}.json`;
+
+    // Read all placement files and replace Tid
+    try {
+      const files = await fs.readdir(placementDir);
+      for (const file of files) {
+        if (!file.endsWith(".json")) continue;
+        const filePath = path.join(placementDir, file);
+        try {
+          const placement = JSON.parse(await fs.readFile(filePath, "utf-8"));
+          if (placement.Tid === originalThingId) {
+            placement.Tid = newThingId;
+            await fs.writeFile(filePath, JSON.stringify(placement, null, 2));
+          }
+        } catch { }
+      }
+    } catch { }
+
+    // Update area load file placements
+    try {
+      const areaData = JSON.parse(await fs.readFile(areaFilePath, "utf-8"));
+      if (Array.isArray(areaData.placements)) {
+        for (const p of areaData.placements) {
+          if (p.Tid === originalThingId) {
+            p.Tid = newThingId;
+          }
+        }
+      }
+      await fs.writeFile(areaFilePath, JSON.stringify(areaData, null, 2));
+    } catch (error) {
+      console.error(`[PLACEMENT REPLACETHING] Failed to update area load file for ${areaId}:`, error);
+      return new Response(JSON.stringify({ ok: false, error: "Failed to update area data" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  }, {
+    body: t.Object({
+      areaId: t.String(),
+      originalThingId: t.String(),
+      newThingId: t.String()
+    })
+  })
   .post("/placement/update", async ({ body, cookie }) => {
     const { areaId, placement } = body;
     const parsed = JSON.parse(decodeURIComponent(placement));
