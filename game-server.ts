@@ -4762,12 +4762,36 @@ const app = new Elysia()
     },
     { body: t.Object({ areaId: t.String(), userId: t.String() }) }
   )
-  .post("/person/updatesetting", async ({ body }) => {
-    const { personId, screenName, statusText, isFindable } = body;
+  .post("/person/updatesetting", async ({ body, cookie }) => {
+    const { name, value } = body as any;
 
-    if (!personId || typeof personId !== "string") {
-      return new Response(JSON.stringify({ ok: false, error: "Missing or invalid personId" }), {
-        status: 422,
+    // Get profile from session cookie
+    const sessionToken = (cookie as any).s?.value as string | undefined;
+    const session = getSessionFromToken(sessionToken);
+    if (!session) {
+      return new Response(JSON.stringify({ ok: false, error: "Not authenticated" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    touchSession(sessionToken);
+
+    // Get personId from account
+    const oldProfileName = session.profileName;
+    const accountPath = `./data/person/accounts/${oldProfileName}.json`;
+    let account: Record<string, any> = {};
+    try {
+      account = JSON.parse(await fs.readFile(accountPath, "utf-8"));
+    } catch {
+      return new Response(JSON.stringify({ ok: false, error: "Account not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    const personId = account.personId;
+    if (!personId) {
+      return new Response(JSON.stringify({ ok: false, error: "No personId in account" }), {
+        status: 400,
         headers: { "Content-Type": "application/json" }
       });
     }
@@ -4783,9 +4807,25 @@ const app = new Elysia()
       });
     }
 
-    if (screenName) personData.screenName = screenName;
-    if (statusText !== undefined) personData.statusText = statusText;
-    if (isFindable !== undefined) personData.isFindable = isFindable;
+    // Map setting name to person data field
+    if (name === "screenName") {
+      // Update screenName in account and person info
+      account.screenName = value;
+      personData.screenName = value;
+
+      // Rename the account file from old name to new name
+      const newAccountPath = `./data/person/accounts/${value}.json`;
+      await fs.writeFile(newAccountPath, JSON.stringify(account, null, 2));
+      await fs.rm(accountPath);
+
+      // Update session to use new profile name so token still works
+      session.profileName = value;
+
+    } else if (name === "statusText") {
+      personData.statusText = value;
+    } else if (name === "isFindable") {
+      personData.isFindable = value === "True" || value === true;
+    }
 
     await fs.writeFile(infoPath, JSON.stringify(personData, null, 2));
 
@@ -4795,10 +4835,8 @@ const app = new Elysia()
     });
   }, {
     body: t.Object({
-      personId: t.String(),
-      screenName: t.Optional(t.String()),
-      statusText: t.Optional(t.String()),
-      isFindable: t.Optional(t.Boolean())
+      name: t.String(),
+      value: t.Union([t.String(), t.Boolean()])
     })
   })
     .get("/inventory/:page", async ({ params, cookie }) => {
