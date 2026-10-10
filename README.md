@@ -1,31 +1,31 @@
-# Echoland — Open-Source, Self-Hostable Anyland Server
+# Echoland - Open-Source, Self-Hostable Anyland Server
 
-> **An open-source replacement server for [Anyland](https://store.steampowered.com/app/555555/Anyland/), created by [Gamedrix](https://github.com/Gamedrix). Self-host your own Anyland experience after the official servers shut down.**
+> An open-source replacement server for [Anyland](https://store.steampowered.com/app/555555/Anyland/), created by [Gamedrix](https://github.com/Gamedrix). Self-host your own Anyland experience after the official servers shut down.
 
-[Anyland](https://store.steampowered.com/app/555555/Anyland/) is an online pure sandbox VR social game released on Steam on October 6th, 2016. It's an amazing game where you can create everything with your own hands — from your world to your avatar to any objects you want. The game's client was fully dependent on a central server for all data, profiles, and creations.
+[Anyland](https://store.steampowered.com/app/555555/Anyland/) is an online pure sandbox VR social game released on Steam on October 6th, 2016. It's an amazing game where you can create everything with your own hands, from your world to your avatar to any objects you want. The game's client was fully dependent on a central server for all data, profiles, and creations.
 
-Since the game was niche and never got the attention it deserved, it didn't receive the financial support needed to keep the server running. In **February 2024**, the official server shut down — and since the game needed that server to run at all, we lost access to the game entirely.
+Since the game was niche and never got the attention it deserved, it didn't receive the financial support needed to keep the server running. In **February 2024**, the official server shut down, and since the game needed that server to run at all, we lost access to the game entirely.
 
-Thankfully, community members like **Zetaphor**, **Cyel**, and others captured data from the game before it closed, publishing the [Anyland Archive Redux](https://github.com/theneolanders/anyland-archive-redux) — a read-only server. The heavy lifting was done, and since the repo was open source, someone just had to make it writable again.
+Thankfully, community members like **Zetaphor**, **Cyel**, and others captured data from the game before it closed, publishing the [Anyland Archive Redux](https://github.com/theneolanders/anyland-archive-redux), a read-only server. The heavy lifting was done, and since the repo was open source, someone just had to make it writable again.
 
 **That's where Echoland comes in.**
 
-Echoland makes the server fully writable and functional, just like the original. You can play the game again, create, build, and enjoy it all — with your own private copy of the server.
+Echoland makes the server fully writable and functional, just like the original. You can play the game again, create, build, and enjoy it all with your own private copy of the server.
 
 ### Features
 
-- **Fully self-hostable** — Run it locally or remotely
-- **Open source** — AGPL-3.0 licensed, free to modify
-- **Independent** — No centralized infrastructure required
-- **Multiplayer** — Supports PUN-based multiplayer (BepInEx mod coming soon for local setups)
-- **Web admin panel** — Manage profiles, assign clients, and monitor sessions
-- **Based on the community archive** — Built on top of the Anyland Archive Redux by Zetaphor and Cyel
+- **Fully self-hostable** - Run it locally or remotely
+- **Open source** - AGPL-3.0 licensed, free to modify
+- **Independent** - No centralized infrastructure required
+- **Multiplayer** - Supports PUN-based multiplayer (BepInEx mod coming soon for local setups)
+- **Web admin panel** - Manage profiles, assign clients, and monitor sessions
+- **Based on the community archive** - Built on top of the Anyland Archive Redux by Zetaphor and Cyel
 
 ---
 
 ## Looking to Just Play?
 
-If you just want to play without setting up a server, check out **[REnyland](https://www.renyland.fr/)** — a server I helped beta test, created by **Axsys**.
+If you just want to play without setting up a server, check out **[REnyland](https://www.renyland.fr/)**, a server I helped beta test, created by **Axsys**.
 
 REnyland is a separate project focused on bringing players together with an easy-to-use launcher. It's not open source and is fully controlled by Axsys. Your profile is preserved on the Steam version, but non-Steam (Goldberg) clients won't have portable profiles.
 
@@ -37,7 +37,7 @@ Echoland, on the other hand, is for those who want to **tinker, self-host, or ke
 
 This project is licensed under **[AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.en.html)**.
 
-> If you run this server and allow users to access it over any network, you **must** make the complete source code available to those users — including any modifications you make. If you're not comfortable with this, please do not use this server or any code in this repository.
+> If you run this server and allow users to access it over any network, you **must** make the complete source code available to those users, including any modifications you make. If you're not comfortable with this, please do not use this server or any code in this repository.
 
 ---
 
@@ -67,7 +67,7 @@ I take no responsibility if the server breaks or if you lose your in-game progre
 
 ### 2. Configure Hosts File
 
-> **Deprecated** — Use the included **EchoSwitch** software instead.
+> **Deprecated** - Use the included **EchoSwitch** software instead.
 
 Add these lines to `C:\Windows\System32\drivers\etc\hosts`:
 
@@ -110,7 +110,7 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 3. Refresh the admin page to see pending connections
 4. **Assign profiles** to connected clients
 5. *(Optional)* Pre-assign a profile for the next client using "Set Next Profile"
-6. **You're playing — enjoy!**
+6. **You're playing, enjoy!**
 
 > **Tip:** The first launch takes time while indexing areas and things. Subsequent launches will be much faster.
 
@@ -268,14 +268,14 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 | `/inventory/move` | Move inventory item |
 | `/inventory/update` | Update inventory item |
 
-#### Gift / Achievement (POST) — *Not Implemented*
+#### Gift / Achievement (POST) - *Not Implemented*
 
 | Endpoint | Description |
 |----------|-------------|
 | `/gift/getreceived` | Get received gifts |
 | `/ach/reg` | Register achievement |
 
-#### 💬 Forum (GET) — *Not Implemented*
+#### Forum (GET) - *Not Implemented*
 
 | Endpoint | Description |
 |----------|-------------|
@@ -295,10 +295,10 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 
 ## Related Works
 
-- [Libreland Server](https://github.com/LibrelandCommunity/libreland-server) — Deprecated project replaced by Echoland
-- [Old Anyland Archive](https://github.com/Zetaphor/anyland-archive) — Original archive started in 2020
-- [Anyland Archive](https://github.com/theneolanders/anyland-archive) — Latest snapshot before servers went offline
-- [Anyland API](https://github.com/Zetaphor/anyland-api) — Documentation of the client/server API
+- [Libreland Server](https://github.com/LibrelandCommunity/libreland-server) - Deprecated project replaced by Echoland
+- [Old Anyland Archive](https://github.com/Zetaphor/anyland-archive) - Original archive started in 2020
+- [Anyland Archive](https://github.com/theneolanders/anyland-archive) - Latest snapshot before servers went offline
+- [Anyland API](https://github.com/Zetaphor/anyland-api) - Documentation of the client/server API
 
 ### Network Captures
 
@@ -317,4 +317,4 @@ The server is written in **TypeScript** and runs with **[Bun](https://bun.sh/)**
 
 ---
 
-> **Anyland will live on — endlessly, openly, and forever in the hands of its community.** 🎮
+> Anyland will live on, endlessly, openly, and forever in the hands of its community.
