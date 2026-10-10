@@ -86,7 +86,7 @@ Double-click **`Start-Server.bat`** in the server folder and it should start rig
 
 Next, open the **EchoSwitch** program that comes with the patch. It lets you point the game client to your server. If you're running the game and server on the same machine, click **"Use this machine as server"**. If not, just enter your server's IP address.
 
-EchoSwitch comes with a default PUN test ID that works fine to get started. Once you're comfortable, you'll want to set up your own. Create a Photon account, grab your PUN ID, and paste it in. Otherwise, anyone else using the same patch and default ID might end up sharing the same PUN pool.
+EchoSwitch comes with a default PUN test ID that works fine to get started. Once you're comfortable, you'll want to set up your own. Create a Photon account, grab your PUN ID, and paste it in. Otherwise, anyone else using the same patch  might end up sharing the same PUN pool.
 
 ### 6. Manage profiles
 
