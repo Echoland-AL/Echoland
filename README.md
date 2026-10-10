@@ -76,7 +76,7 @@ You can read more about Bun at [bun.sh](https://bun.sh/).
 
 ### 4. Start the server
 
-Double-click **`Start-Server.bat`** in the server folder. The first launch will take some time while it indexes all areas and things. After that, subsequent launches are much faster.
+Double-click **`Start-Server.bat`** in the server folder and it should start right away!
 
 ### 5. Set up the game client
 
