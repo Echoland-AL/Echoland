@@ -118,9 +118,9 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 
 ## API Endpoints
 
-### Main Server (port 8000)
+### Main Server
 
-#### 🔧 Admin (GET)
+#### Admin (GET)
 
 | Endpoint | Description |
 |----------|-------------|
