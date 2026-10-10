@@ -286,26 +286,9 @@ chmod +x launch-server-linux.sh
 
 #### Gift / Achievement (POST) - *Not Implemented*
 
-| Endpoint | Description |
-|----------|-------------|
-| `/gift/getreceived` | Get received gifts |
-| `/ach/reg` | Register achievement |
 
 #### Forum (GET) - *Not Implemented*
 
-| Endpoint | Description |
-|----------|-------------|
-| `/forum/favorites` | Get favorite forums |
-| `/forum/forum/:id` | Get forum by ID |
-| `/forum/thread/:id` | Get thread by ID |
-
-### Sub-Servers
-
-| Port | Service | Endpoint | Description |
-|------|---------|----------|-------------|
-| **8001** | ThingDefs | `GET /:thingId` | Serve thing definition |
-| **8002** | AreaBundles | `GET /:areaId/:areaKey` | Serve area bundle |
-| **8003** | UGCImages | `GET /:part1/:part2/` | Serve UGC image |
 
 ---
 
