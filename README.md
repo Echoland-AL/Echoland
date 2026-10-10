@@ -235,7 +235,7 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 | `/thing/flagStatus` | Get thing flag status |
 | `/thing/info` | Get thing info by ID in body |
 | `/thing/updateInfo` | Update thing info |
-| `/thing/topby` | Get top things by creator *(shows most recent things created)* |
+| `/thing/topby` | Get top things by creator *(too niche for that, shows most recent things created instead)* |
 | `/thing/gettags` | Get thing tags |
 | `/thing/getflag` | Get thing flag |
 
