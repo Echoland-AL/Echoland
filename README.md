@@ -130,7 +130,8 @@ Make the launch script executable and run it:
 chmod +x launch-server-linux.sh
 ./launch-server-linux.sh
 ```
-Done ! I think...
+Done! I think...
+
 ---
 
 ## API Endpoints
