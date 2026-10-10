@@ -49,7 +49,7 @@ I take no responsibility if the server breaks or if you lose your in-game progre
 
 ## Setup & Running
 
-📺 [Watch the setup video](https://www.youtube.com/watch?v=se97PN2JKhc)
+[Watch the setup video](https://www.youtube.com/watch?v=se97PN2JKhc)
 
 ### 1. Choose Your Installation Method
 
