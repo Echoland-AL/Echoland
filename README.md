@@ -28,16 +28,122 @@ It's safe to say that now, Anyland will live on—endlessly, openly, and forever
 
 ---
 
-## Current Features
+================================================================================
+                                ENDPOINTS
+================================================================================
 
-- Create areas and build items  
-- Multiplayer-friendly server (fully multiplayer with PUN)  
-- Multi-user support with a web-based interface to manage profiles  
-- Inventory system with body attachments  
-- Access to the entire archive (Areas and Things)  
-- Search archived items by name in the inventory  
-- Area features working
-- Pretty much the majority of the functionalities work
+MAIN SERVER
+--------------------------------------------------------------------------------
+
+ADMIN (GET)
+  /admin                        — Admin panel HTML
+  /admin/assign                 — Assign profile to waiting client
+  /admin/create-profile         — Create a new profile
+  /admin/set-next-profile       — Set pre-selected profile for next client
+  /admin/clear-next-profile     — Clear pre-selected profile
+  /admin/delete-profile         — Delete a profile
+  /api/admin/active             — Active players/sessions snapshot (JSON)
+  /api/profiles                 — List all profiles (JSON)
+  /admin/events                 — SSE stream for admin panel updates
+
+AUTH (POST)
+  /auth/start                   — Authenticate and create session
+
+PERSON (POST)
+  /person/updateattachment      — Update player attachments
+  /person/sethandcolor          — Set avatar hand color
+  /person/registerusagemode     — Register usage mode
+  /person/addfriend             — Add friend
+  /person/removefriend          — Remove friend
+  /person/getflag               — Get person flag
+  /person/ping                  — Ping another player
+  /person/incfriendstrength     — Increment friend strength
+  /person/updatesetting         — Update person setting (screen name, status, findable)
+  /person/info                  — Get person info (area-specific)
+  /person/infobasic             — Get basic person info (area-specific)
+
+PERSON (GET)
+  person/friendsbystr           — Get friends by strength (*note: missing leading slash in code)
+
+PRESENCE (POST)
+  /p                            — Update player presence/position
+
+AREA (POST)
+  /area/load                    — Load an area by ID or URL name
+  /area/info                    — Get area info
+  /area/getflag                 — Get area flag status
+  /area/setfavorite             — Toggle favorite on an area
+  /area/save                    — Save area data
+  /area/getsubareas             — Get sub-areas of an area
+  /area/setparentarea           — Set parent area/subareas
+  /area/search                  — Search areas
+  /area/lists                   — Get area lists (visited, created, favorites, etc.)
+  /area/sethome                 — Set home area
+  /area                         — Create area
+  /area/updatesettings          — Update area settings
+  /area/rename                  — Rename an area
+  /area/seteditor               — Set editor permissions
+  /area/setlisteditor           — Set list editor permissions
+  /area/visit                   — Record area visit
+  /area/random                  — Get random area (also available as GET)
+
+AREA (GET)
+  /area/random                  — Get random area (also available as POST)
+  /repair-home-area             — Repair home area (old non-usable for testing on earlier versions)
+
+USER (POST)
+  /user/setName                 — Change username
+
+PLACEMENT (POST)
+  /placement/list               — List placements in area
+  /placement/metadata           — Get placement metadata
+  /placement/new                — Create new placement
+  /placement/info               — Get placement info
+  /placement/save               — Save placement
+  /placement/copyall            — Copy all placements
+  /placement/delete             — Delete a placement
+  /placement/deleteall          — Delete all placements in area
+  /placement/replacething       — Replace thing in all matching placements
+  /placement/update             — Update placement
+  /placement/duplicate          — Duplicate placement
+  /placement/setattr            — Set placement attribute
+
+THING (POST)
+  /thing                        — Create thing
+  /thing/updateDefinition       — Update thing definition
+  /thing/saveDefinition         — Save thing definition
+  /thing/rename                 — Rename thing
+  /thing/search                 — Search things
+  /thing/fixmissinginfo         — Fix missing info files
+  /thing/definition             — Get thing definition
+  /thing/definitionAreaBundle   — Get thing definition area bundle
+  /thing/flagStatus             — Get thing flag status
+  /thing/info                   — Get thing info by ID in body
+  /thing/updateInfo             — Update thing info
+  /thing/topby                  — Get top things by creator (Too niche for that instead it just shows it's most recent thing created)
+  /thing/gettags                — Get thing tags
+  /thing/getflag                — Get thing flag
+
+THING (PUT)
+  /thing/:id                    — Update thing by ID
+
+THING (GET)
+  /thing/info/:id               — Get thing info
+  /thing/def/:id                — Get thing definition
+  /thing/sl/tdef/:thingId       — Get thing def via sl route
+
+INVENTORY (GET)
+  /inventory/:page              — Get inventory page
+
+INVENTORY (POST)
+  /inventory/save               — Save inventory item
+  /inventory/delete             — Delete inventory item
+  /inventory/move               — Move inventory item
+  /inventory/update             — Update inventory item
+
+GIFT / ACHIEVEMENT (POST) -NOT IMPLEMENTED
+
+FORUM (GET) -NOT IMPLEMENTED
 
 
 ---
