@@ -82,10 +82,10 @@ Add these lines to `C:\Windows\System32\drivers\etc\hosts`:
 
 | File | Link |
 |------|------|
-| **Anyland Client** | [Google Drive](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link) |
+| **Anyland Client** | [Anyland.rar](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link) |
 | **Patch** | [Patch.rar](https://drive.google.com/file/d/1_ZxluhZNU-BK5tbyWPHHNd16LZu0t7QH/view?usp=sharing) |
 | **Images Folder** (optional) | [Google Drive](https://drive.google.com/file/d/1RbCZvx0SJK9oaLEhfDAfSgdZJKgmGxAU/view?usp=drive_link) |
-| **Archive Data** (required) | [data.zip](https://drive.google.com/file/d/1f-XnM_KmwdqGhp9lpCx1SCiWUdCjhjWw/view?usp=drive_link) |
+| **Archive Data** (required) | [images.rar](https://drive.google.com/file/d/1f-XnM_KmwdqGhp9lpCx1SCiWUdCjhjWw/view?usp=drive_link) |
 
 Extract the `data.zip` contents into your Echoland server folder as `data/`.
 
