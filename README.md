@@ -10,14 +10,15 @@ Thankfully, community members like **Zetaphor**, **Cyel**, and others captured d
 
 **That's where Echoland comes in.**
 
-Echoland makes the server fully writable and functional, just like the original. You can play the game again, create, build, and enjoy it all with your own private copy of the server.
+Echoland is fully writable and functional, just like the original server. You can play the game again, create, build, and enjoy it all with your own private copy.
 
 ### Features
 
 - **Fully self-hostable** - Run it locally or remotely
 - **Open source** - AGPL-3.0 licensed, free to modify
 - **Independent** - No centralized infrastructure required
-- **Multiplayer** - Supports PUN-based multiplayer (BepInEx mod coming soon for local setups)
+- **It's yours** - Your server, your data, your game. Everything runs on your own machine
+- **Multiplayer** - Full multiplayer support with PUN
 - **Web admin panel** - Manage profiles, assign clients, and monitor sessions
 - **Based on the community archive** - Built on top of the Anyland Archive Redux by Zetaphor and Cyel
 
@@ -51,69 +52,84 @@ I take no responsibility if the server breaks or if you lose your in-game progre
 
 [Watch the setup video](https://www.youtube.com/watch?v=se97PN2JKhc)
 
-### 1. Choose Your Installation Method
+Here's everything you need to get up and running, step by step.
 
-#### Option A: Docker (Recommended for beginners)
+### 1. Download the server
 
-- Install Docker from [docker.com/get-started](https://www.docker.com/get-started)
-- Run **`Start-Server Docker.bat`** to start all services automatically
+Click the **Code** button on the repo page and download it as ZIP, then extract it somewhere convenient.
 
-#### Option B: Direct Installation (Advanced)
+### 2. Download the archive data
 
-| Platform | Instructions |
-|----------|-------------|
-| **Windows** | Install [Bun](https://bun.sh/) via `powershell -c "irm bun.sh/install.ps1 | iex"`, then run **`Start-Server.bat`** |
-| **Linux** | Run `./install-and-run.sh` to install Bun and start the server |
+Grab the archive data here: [data.rar](https://drive.google.com/file/d/1f-XnM_KmwdqGhp9lpCx1SCiWUdCjhjWw/view?usp=drive_link)
 
-### 2. Configure Hosts File
+Extract it into the server folder so you have a `data/` directory inside. This folder has millions of tiny files, so it might take a while.
 
-> **Deprecated** - Use the included **EchoSwitch** software instead.
+### 3. Install Bun
 
-Add these lines to `C:\Windows\System32\drivers\etc\hosts`:
+Bun is the runtime the server runs on. On Windows, open PowerShell and run:
 
 ```
-127.0.0.1 app.anyland.com
-127.0.0.1 d6ccx151yatz6.cloudfront.net
-127.0.0.1 d26e4xubm8adxu.cloudfront.net
-127.0.0.1 steamuserimages-a.akamaihd.net
+irm bun.sh/install.ps1 | iex
 ```
 
-### 3. Download Required Files
+You can read more about Bun at [bun.sh](https://bun.sh/).
 
-| File | Link |
-|------|------|
-| **Anyland Client** | [Anyland.rar](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link) |
-| **Patch** | [Patch.rar](https://drive.google.com/file/d/1_ZxluhZNU-BK5tbyWPHHNd16LZu0t7QH/view?usp=sharing) |
-| **Images Folder** (optional) | [Google Drive](https://drive.google.com/file/d/1RbCZvx0SJK9oaLEhfDAfSgdZJKgmGxAU/view?usp=drive_link) |
-| **Archive Data** (required) | [images.rar](https://drive.google.com/file/d/1f-XnM_KmwdqGhp9lpCx1SCiWUdCjhjWw/view?usp=drive_link) |
+### 4. Start the server
 
-Extract the `data.zip` contents into your Echoland server folder as `data/`.
+Double-click **`Start-Server.bat`** in the server folder. The first launch will take some time while it indexes all areas and things. After that, subsequent launches are much faster.
 
-### 4. Start the Server
+### 5. Set up the game client
 
-#### Docker (Option A):
-1. Double-click **`Start-Server Docker.bat`**
-2. Choose option **1** (Start Server)
-3. Wait for area and thing indexing to complete
-4. Choose option **6** to view logs if needed
-5. Open `Echoland-Admin.html` or visit [http://localhost:8000/admin](http://localhost:8000/admin)
+**If you have Anyland on Steam:** Download the patch [here](https://drive.google.com/file/d/1_ZxluhZNU-BK5tbyWPHHNd16LZu0t7QH/view?usp=sharing) and extract its contents directly into your game's Steam folder.
 
-#### Direct Installation (Option B):
-1. **Windows**: Double-click **`Start-Server.bat`**
-2. **Linux**: Run `./launch-server-linux.sh` (game server) and `./launch-anyland-linux.sh` (full setup)
-3. Wait for indexing to complete
-4. Visit [http://localhost:8000/admin](http://localhost:8000/admin)
+**If you don't have the game:** Download the client [here](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link), then extract the same patch into it.
 
-#### Final Steps:
-1. In the admin panel, **create user profiles**
-2. **Start the Anyland game client**
-3. Refresh the admin page to see pending connections
-4. **Assign profiles** to connected clients
-5. *(Optional)* Pre-assign a profile for the next client using "Set Next Profile"
-6. **You're playing, enjoy!**
+Next, open the **EchoSwitch** program that comes with the server. It lets you point the game client to your server. If you're running the game and server on the same machine, click **"Use this machine as server"**. If not, just enter your server's IP address.
 
-> **Tip:** The first launch takes time while indexing areas and things. Subsequent launches will be much faster.
+EchoSwitch comes with a default PUN test ID that works fine to get started. Once you're comfortable, you'll want to set up your own. Create a Photon account, grab your PUN ID, and paste it in. Otherwise, anyone else using the same patch and default ID might end up sharing the same PUN pool.
 
+### 6. Manage profiles
+
+Open your browser and go to [http://localhost:8000/admin](http://localhost:8000/admin) to access the admin panel.
+
+From here you can create and delete profiles, pre-assign a profile for the next client that connects, or assign a profile to a client that's already waiting.
+
+Start the game, connect, assign a profile from the admin panel, and you're in. Enjoy!
+
+---
+
+## Setup on Linux
+
+The steps are pretty much the same as Windows, just with different commands.
+
+### 1. Download the server
+
+Click the **Code** button on the repo page, download as ZIP, and extract it somewhere convenient.
+
+### 2. Download the archive data
+
+Grab the archive data here: [data.rar](https://drive.google.com/file/d/1f-XnM_KmwdqGhp9lpCx1SCiWUdCjhjWw/view?usp=drive_link)
+
+Extract it into the server folder so you have a `data/` directory inside.
+
+### 3. Install Bun
+
+Open a terminal and run:
+
+```
+curl -fsSL https://bun.sh/install | bash
+```
+
+You might need to restart your terminal or run `source ~/.bashrc` to make `bun` available in your current session.
+
+### 4. Start the server
+
+Make the launch script executable and run it:
+
+```
+chmod +x launch-server-linux.sh
+./launch-server-linux.sh
+```
 ---
 
 ## API Endpoints
