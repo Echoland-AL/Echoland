@@ -1,8 +1,8 @@
 # Echoland - Open-Source, Self-Hostable Anyland Server
 
-> An open-source replacement server for [Anyland](https://store.steampowered.com/app/555555/Anyland/), created by [Gamedrix](https://github.com/slimyburp-gamedrix). Self-host your own Anyland experience after the official servers shut down.
+> An open-source replacement server for [Anyland](https://store.steampowered.com/app/505700/Anyland/), created by [Gamedrix](https://github.com/slimyburp-gamedrix). Self-host your own Anyland experience after the official servers shut down.
 
-[Anyland](https://store.steampowered.com/app/555555/Anyland/) is an online pure sandbox VR social game released on Steam on October 6th, 2016. It's an amazing game where you can create everything with your own hands, from your world to your avatar to any objects you want. The game's client was fully dependent on a central server for all data, profiles, and creations.
+[Anyland](https://store.steampowered.com/app/505700/Anyland/) is an online pure sandbox VR social game released on Steam on October 6th, 2016. It's an amazing game where you can create everything with your own hands, from your world to your avatar to any objects you want. The game's client was fully dependent on a central server for all data, profiles, and creations.
 
 Since the game was niche and never got the attention it deserved, it didn't receive the financial support needed to keep the server running. In **February 2024**, the official server shut down, and since the game needed that server to run at all, we lost access to the game entirely.
 
