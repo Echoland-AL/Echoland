@@ -12,7 +12,7 @@ Thankfully, community members like **Zetaphor**, **Cyel**, and others captured d
 
 Echoland makes the server fully writable and functional, just like the original. You can play the game again, create, build, and enjoy it all — with your own private copy of the server.
 
-### ✨ Features
+### Features
 
 - **Fully self-hostable** — Run it locally or remotely
 - **Open source** — AGPL-3.0 licensed, free to modify
@@ -134,13 +134,13 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 | `/api/profiles` | List all profiles (JSON) |
 | `/admin/events` | SSE stream for admin panel updates |
 
-#### 🔐 Auth (POST)
+#### Auth (POST)
 
 | Endpoint | Description |
 |----------|-------------|
 | `/auth/start` | Authenticate and create session |
 
-#### 👤 Person (POST)
+#### Person (POST)
 
 | Endpoint | Description |
 |----------|-------------|
@@ -156,19 +156,19 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 | `/person/info` | Get person info (area-specific) |
 | `/person/infobasic` | Get basic person info (area-specific) |
 
-#### 👤 Person (GET)
+#### Person (GET)
 
 | Endpoint | Description |
 |----------|-------------|
 | `person/friendsbystr` | Get friends by strength *(note: missing leading slash in code)* |
 
-#### 📍 Presence (POST)
+#### Presence (POST)
 
 | Endpoint | Description |
 |----------|-------------|
 | `/p` | Update player presence/position |
 
-#### 🌍 Area (POST)
+#### Area (POST)
 
 | Endpoint | Description |
 |----------|-------------|
@@ -190,20 +190,20 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 | `/area/visit` | Record area visit |
 | `/area/random` | Get random area (also available as GET) |
 
-#### 🌍 Area (GET)
+#### Area (GET)
 
 | Endpoint | Description |
 |----------|-------------|
 | `/area/random` | Get random area (also available as POST) |
 | `/repair-home-area` | Repair home area *(legacy, for testing only)* |
 
-#### 👤 User (POST)
+#### User (POST)
 
 | Endpoint | Description |
 |----------|-------------|
 | `/user/setName` | Change username |
 
-#### 📦 Placement (POST)
+#### Placement (POST)
 
 | Endpoint | Description |
 |----------|-------------|
@@ -220,7 +220,7 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 | `/placement/duplicate` | Duplicate placement |
 | `/placement/setattr` | Set placement attribute |
 
-#### 🧱 Thing (POST)
+#### Thing (POST)
 
 | Endpoint | Description |
 |----------|-------------|
@@ -239,13 +239,13 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 | `/thing/gettags` | Get thing tags |
 | `/thing/getflag` | Get thing flag |
 
-#### 🧱 Thing (PUT)
+#### Thing (PUT)
 
 | Endpoint | Description |
 |----------|-------------|
 | `/thing/:id` | Update thing by ID |
 
-#### 🧱 Thing (GET)
+#### Thing (GET)
 
 | Endpoint | Description |
 |----------|-------------|
@@ -253,13 +253,13 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 | `/thing/def/:id` | Get thing definition |
 | `/thing/sl/tdef/:thingId` | Get thing def via sl route |
 
-#### 🎒 Inventory (GET)
+#### Inventory (GET)
 
 | Endpoint | Description |
 |----------|-------------|
 | `/inventory/:page` | Get inventory page |
 
-#### 🎒 Inventory (POST)
+#### Inventory (POST)
 
 | Endpoint | Description |
 |----------|-------------|
@@ -268,7 +268,7 @@ Extract the `data.zip` contents into your Echoland server folder as `data/`.
 | `/inventory/move` | Move inventory item |
 | `/inventory/update` | Update inventory item |
 
-#### 🎁 Gift / Achievement (POST) — *Not Implemented*
+#### Gift / Achievement (POST) — *Not Implemented*
 
 | Endpoint | Description |
 |----------|-------------|
