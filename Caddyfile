@@ -3,33 +3,49 @@
     admin off
 }
 
-# API (port 8000)
+# Original domain blocks (if hosts file is ever used)
 http://app.anyland.com {
     reverse_proxy localhost:8000
 }
 
-# Thing Definitions CDN (port 8001)
 http://d6ccx151yatz6.cloudfront.net {
     reverse_proxy localhost:8001
 }
 
-# Area Bundles CDN (port 8002)
 http://d26e4xubm8adxu.cloudfront.net {
     reverse_proxy localhost:8002
 }
 
-# Steam User Images CDN (port 8003) + Rewrite everything to new Steam CDN
 http://steamuserimages-a.akamaihd.net {
     reverse_proxy https://images.steamusercontent.com {
         header_up Host images.steamusercontent.com
     }
 }
 
+# PORT 80 PATH ROUTER FOR DIRECT IP CONNECTIONS
 :80 {
-    reverse_proxy localhost:8000
+    # Area Bundles CDN -> Echoland Port 8002
+    handle_path /cdn-bundles* {
+        reverse_proxy localhost:8002
+    }
 
+    # Thing Definitions CDN -> Echoland Port 8001
+    handle_path /cdn-things* {
+        reverse_proxy localhost:8001
+    }
+
+    # Steam User Images CDN -> Steam
+    handle_path /cdn-steam* {
+        reverse_proxy https://images.steamusercontent.com {
+            header_up Host images.steamusercontent.com
+        }
+    }
+
+    # Synth audio route
     route /synth* {
         reverse_proxy localhost:42069
     }
-}
 
+    # Default API Route -> Echoland Port 8000
+    reverse_proxy localhost:8000
+}
