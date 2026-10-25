@@ -80,7 +80,7 @@ Double-click **`Start-Server.bat`** in the server folder and it should start rig
 
 ### 5. Set up the game client
 
-**If you have Anyland on Steam:** Download the patch [here](https://drive.google.com/file/d/1_ZxluhZNU-BK5tbyWPHHNd16LZu0t7QH/view?usp=sharing) and extract its contents directly into your game's Steam folder.
+**If you have Anyland on Steam:** Download the patch [here](https://drive.google.com/file/d/1UD5XWlSccfDWqjhyDYHhxQBIqDqyt43W/view?usp=sharing) and extract its contents directly into your game's Steam folder.
 
 **If you don't have the game:** Download the client [here](https://drive.google.com/file/d/10TcYQVcqVoRQDdlFOcQwUZweIsApufpm/view?usp=drive_link), then extract the same patch into it.
 
