@@ -310,6 +310,63 @@ Two `ndjson` files in the `live-captures` directory were recorded using Cyel's p
 
 ---
 
+## BepInEx Mods
+
+A set of BepInEx mods is included to extend the game client and make self-hosting smoother. All mods install into the standard `BepInEx/plugins/` folder inside your Anyland game directory.
+
+To **disable** any mod, simply move or delete its `.dll` (and optional `.pdb`) file from the `BepInEx/plugins/` folder.
+
+### EchoSwitch Rerouter
+
+**Plugin ID:** `echoswitch.rerouter`
+
+Redirects all game client network traffic — API calls, CDN endpoints for things, bundles, and Steam images — to your custom server instead of the dead official servers. It reads the target IP from `BepInEx/config/echoswitch_server_ip.cfg`, which is set by the EchoSwitch utility.
+
+### Dynamic PUN Override
+
+**Plugin ID:** `com.echoswitch.pun.override`
+
+Overrides the hardcoded Photon PUN (multiplayer networking) ID used by the game. This lets you share a multiplayer pool with other players or run a private one. The PUN ID is managed through the EchoSwitch utility and stored in `BepInEx/config/pun_override.cfg`.
+
+### Free Locomotion (VR)
+
+**Plugin ID:** `echoland.vrlocomotion`
+
+Enables free movement in VR mode. The game natively restricts VR locomotion to teleport-only movement, but this mod adds continuous controller-based movement. It's particularly useful for building and navigating large areas.
+
+> **Note:** This is a basic locomotion mod — it does not include collision-based climbing, jumping, or falling like the desktop version. It's designed as a practical tool for VR building and navigation rather than a full replacement for native VR movement.
+
+### Performance Optimizer & Saver
+
+**Plugin ID:** `com.gamedrix.anyland.performancepersist`
+
+Persists your in-game performance settings across sessions. The game normally resets nearby limits every time you reconnect, and these settings are not stored server-side. This mod saves and restores:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Max Things Around | 250 | Maximum number of placed objects loaded nearby |
+| Max Lights Around | 3 | Number of dynamic lights rendered |
+| Max Shadow-Casting Lights | 1 | Lights that cast shadows |
+| Max Image Parts Around | 500 | Texture/image parts loaded nearby (game default is ~12) |
+
+The image parts limit is hardcoded to 500 by default — significantly higher than the game's built-in limit of around a dozen — so you get much better texture rendering in busy areas.
+
+All settings are configurable through `BepInEx/config/` and are saved automatically whenever you change them in-game.
+
+---
+
+## EchoSwitch Utility
+
+The **EchoSwitch** program is a small Windows utility bundled with the game patch. It provides a simple GUI to:
+
+- Point the game client to your server by setting the target IP address
+- Configure your PUN multiplayer ID
+- Auto-detect your Anyland installation folder
+
+It writes the configuration files that the BepInEx mods read at startup (`echoswitch_server_ip.cfg` and `pun_override.cfg`). The source code is included in the `Echoswitch Software Source/` folder.
+
+---
+
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for details.
